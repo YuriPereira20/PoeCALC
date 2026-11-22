@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculadora PoE</title>
+<style>
+  :root {
+    --bg:#0d0e11; --panel:#15171c; --panel2:#1c1f26; --line:#282c35;
+    --text:#e6e3dc; --muted:#8a8f9a;
+    --accent:#d4a85a; --accent-soft:rgba(212,168,90,.14);
+    --pos:#4cc38a; --pos-soft:rgba(76,195,138,.14);
+    --neg:#f0616d; --neg-soft:rgba(240,97,109,.14);
+    --warn:#e5a54b; --warn-soft:rgba(229,165,75,.13);
+    --info:#6aa9ff; --info-soft:rgba(106,169,255,.14);
+    --r:10px;
+    color-scheme: dark;
+  }
+  *{box-sizing:border-box;scrollbar-color:var(--line) transparent}
+  [hidden]{display:none!important}
+  body{margin:0;font:14px/1.45 system-ui,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
+  a{color:var(--info)}
+  a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  h2{font-size:24px;font-weight:700;margin:0 0 14px}
+  h3{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:26px 0 8px}
+  aside{position:sticky;top:0;align-self:flex-start;height:100vh;overflow-y:auto;width:264px;flex:none;display:flex;flex-direction:column;padding:16px 12px;background:var(--panel);border-right:1px solid var(--line)}
+  main{flex:1;min-width:0;padding:24px 28px 48px}
+  .brand{display:block;margin:4px 10px 12px;font-size:20px;font-weight:700;letter-spacing:.5px;color:var(--text);text-decoration:none}
+  .brand b{color:var(--accent)}
+  .brand small{display:block;font-size:12px;font-weight:400;letter-spacing:0;margin-top:2px}
+  aside h4{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:18px 10px 6px}
+  nav a{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;color:var(--text);text-decoration:none}
+  nav a:hover{background:var(--panel2)}
+  nav a.on{background:var(--accent-soft);color:var(--accent);box-shadow:inset 3px 0 var(--accent);font-weight:600}
+  .cnt{font-size:11px;color:var(--muted);background:var(--panel2);padding:1px 7px;border-radius:999px}
+  /* above the nav: with 14 calculators the bottom of the sidebar is off screen */
+  .side-ctl{margin-top:14px;padding:0 10px 14px;border-bottom:1px solid var(--line)}
+  aside label{display:block;margin:0 0 10px;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+  aside label select{display:block;width:100%;margin-top:4px;font-size:14px;letter-spacing:0;text-transform:none;color:var(--text)}
+  #atualizar{width:100%}
+  #info{margin:10px 0 0;font-size:12px}
+  input:not([type=checkbox]),select,button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit}
+  input:not([type=checkbox]):hover,select:hover,button:hover{border-color:#3a3f4b}
+  input[type=checkbox]{accent-color:var(--accent)}
+  button{cursor:pointer}
+  button.primary{background:var(--accent);color:#1a1408;font-weight:600;border-color:transparent}
+  button:disabled{opacity:.5;cursor:default}
+  .ctl{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+  .ctl label{display:flex;align-items:center;gap:8px;white-space:nowrap;color:var(--muted)}
+  #q,#xq{width:240px;max-width:100%}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:0 0 16px}
+  .stat,.pod{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+  .stat b{display:block;font-size:22px;font-weight:700;margin-top:2px}
+  .stat small{display:block;font-size:12px}
+  .lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+  .bar{height:4px;border-radius:999px;background:var(--panel2);margin-top:5px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--accent);border-radius:inherit}
+  .podio{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:14px 0}
+  .podio:empty{display:none}
+  .pod{display:block;color:var(--text);text-decoration:none}
+  .pod:hover{border-color:var(--accent)}
+  .pod:first-child{border-top:2px solid var(--accent)}
+  .rk{display:inline-block;font-size:12px;font-weight:700;color:#1a1408;background:var(--muted);padding:1px 8px;border-radius:999px}
+  .pod:nth-child(1) .rk{background:var(--accent)}
+  .pod:nth-child(2) .rk{background:#b9bec9}
+  .pod:nth-child(3) .rk{background:#c08457}
+  .pod .ttl{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:8px 0 6px;font-size:15px;font-weight:600}
+  .pod b{display:block;font-size:22px;font-weight:700;margin:6px 0 2px}
+  .pod small{display:block;font-size:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:clip;margin:8px 0 18px}
+  table{width:100%;border-collapse:separate;border-spacing:0}
+  th,td{padding:8px 10px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--line)}
+  tbody tr:last-child td{border-bottom:0}
+  th{position:sticky;top:0;z-index:1;background:var(--panel2);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);white-space:nowrap}
+  th[data-k]{cursor:pointer}
+  th[data-k]:hover{color:var(--text)}
+  th.sorted{color:var(--accent)}
+  tbody tr:hover td{background:rgba(255,255,255,.03)}
+  .num{text-align:right;white-space:nowrap}
+  .name{color:var(--text);font-weight:600;text-decoration:none}
+  .name:hover{color:var(--accent)}
+  .chip,.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:var(--panel2);color:var(--muted);border:1px solid var(--line);text-decoration:none;white-space:nowrap}
+  .pill{font-weight:600}
+  .chip.pos,.pill.pos{color:var(--pos);background:var(--pos-soft);border-color:transparent}
+  .chip.neg,.pill.neg{color:var(--neg);background:var(--neg-soft);border-color:transparent}
+  .chip.warn{color:var(--warn);background:var(--warn-soft);border-color:transparent}
+  .chip.info{color:var(--info);background:var(--info-soft);border-color:transparent}
+  td .chip{margin:2px 4px 2px 0}
+  .meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+  .comp{display:flex;overflow:hidden;height:14px;border-radius:999px;background:var(--panel2)}
+  .comp > i{display:block;height:100%;flex:none}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;margin-top:10px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .off td:not(:nth-child(5)){opacity:.45}
+  .note{margin:0 0 12px;padding:10px 12px;background:var(--panel);border-left:3px solid var(--accent);border-radius:8px;color:var(--muted)}
+  .note:empty{display:none}
+  .pos{color:var(--pos)}
+  .neg{color:var(--neg)}
+  .warn{color:var(--warn)}
+  .err{color:var(--neg)}
+  .muted,small{color:var(--muted)}
+  td.pos,td.neg{font-weight:700}
+  .ico{width:28px;height:28px;object-fit:contain;flex:none;vertical-align:middle;border-radius:4px}
+  .ico.s{width:18px;height:18px}
+  .ico.l{width:44px;height:44px}
+  .ico.xl{width:64px;height:64px}
+  .wi{display:inline-flex;align-items:center;gap:8px;min-width:0}
+  .hd{display:flex;align-items:center;gap:14px;margin:0 0 14px}
+  .hd h2{margin:0;min-width:0}
+  .pod .ico{float:right;margin:0 0 6px 10px}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;vertical-align:-2px;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+  @media (max-width:800px){
+    body{display:block}
+    aside{position:static;height:auto;width:auto;border-right:0;border-bottom:1px solid var(--line)}
+    main{padding:16px;overflow-x:auto}
+    .card{overflow-x:auto}
+  }
+</style>
+</head>
+<body>
+<aside>
+  <a class="brand" href="#/top">Poe<b>CALC</b><small>Lucros de Path of Exile</small></a>
+  <div class="side-ctl">
+    <label>Liga <select id="liga"></select></label>
+    <label>Moeda <select id="moeda"><option value="c">Chaos</option><option value="div">Divine</option></select></label>
+    <button id="atualizar" class="primary">Atualizar preços</button>
+    <p class="muted" id="info"></p>
+  </div>
+  <nav id="nav"></nav>
+  <nav id="extras"></nav>
+</aside>
+<main id="main"><p class="muted"><span class="spin"></span> Carregando...</p></main>
+<script type="module">
+import { calc } from './calc.js';
+
+const STATIC = false; // build.mjs flips this to true in the GitHub Pages copy
+const lgFile = (lg) => lg.replace(/[^a-zA-Z0-9]/g, '_');
+
+const LEAGUES = ['Covens', 'Hardcore Covens', 'Standard', 'Hardcore'];
+const mg = (c) => c.margin ?? -1e15;
+const SORTS = {
+  'Lucro maior': (a, b) => b.c.profit - a.c.profit,
+  'Lucro menor': (a, b) => a.c.profit - b.c.profit,
+  'Margem maior': (a, b) => mg(b.c) - mg(a.c),
+  'Custo menor': (a, b) => a.c.cost - b.c.cost,
+  'Valor esperado maior': (a, b) => b.c.ev - a.c.ev,
+  'Mais runs': (a, b) => b.s.runs - a.s.runs,
+  'Nome': (a, b) => (a.s.title || '').localeCompare(b.s.title || '', 'pt-BR'),
+};
+const $ = (q) => document.querySelector(q);
+const main = $('#main');
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+const nf = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const r1 = (n) => { const r = Math.round(n * 10) / 10; return nf.format(r === 0 ? 0 : r); };
+const dec = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+
+let D = null;                                // resposta de /api/data
+let liga = LEAGUES.includes(store.get('liga')) ? store.get('liga') : 'Covens';
+let moeda = store.get('moeda') === 'div' ? 'div' : 'c';
+let cur = null;                              // estrategia aberta no detalhe
+let curCat = null;                           // categoria da lista
+let ovCur = {};                              // ajustes da estrategia aberta
+let lf = { q: '', sort: 'Lucro maior', pos: false, drop: false };
+let EXTRAS = [];                             // calculadoras extras (/api/extras)
+let xv = {};                                 // calculadora aberta: slug, league, data, err, busy, sort, q, pos
+let xTok = 0;                                // numero da ultima requisicao de calculadora
+
+const money = (v) => {
+  if (!Number.isFinite(v)) return '-';
+  const dv = D?.live?.['divine-orb'];
+  return moeda === 'div' && dv > 0 ? `${r1(v / dv)} div` : `${r1(v)} c`;
+};
+const pct = (v) => (Number.isFinite(v) ? `${r1(v)}%` : '-');
+// custo desconhecido (costUnknown do calc.js): chip no lugar do custo; lucro vira "até" e sem cor
+const costHtml = (c) => (c.costUnknown ? `<span class="chip warn">${c.req.length ? 'sem preço' : 'sem requisito'}</span>` : esc(money(c.cost)));
+const profitTxt = (c) => (c.costUnknown ? `até ${money(c.profit)}` : money(c.profit));
+const profitCls = (c) => (c.costUnknown ? 'muted' : c.profit > 0 ? 'pos' : c.profit < 0 ? 'neg' : '');
+const unitHtml = (u) => (u > 0 ? esc(money(u)) : '<span class="chip warn">sem preço</span>');
+const catName = (slug) => D.categories.find((c) => c.slug === slug)?.name ?? slug;
+const wiki = (name) => `<a href="https://www.poewiki.net/wiki/${encodeURIComponent(name ?? '')}" target="_blank" rel="noopener">${esc(name)}</a>`;
+const ico = (url, cls = '') => (url ? `<img class="ico ${cls}" src="${esc(url)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : '');
+// arte da estratégia: imagem do poe.how redimensionada; sem ela, ícone do primeiro item
+const simg = (s, w) => (s.img ? `https://poe.how/_next/image?url=${encodeURIComponent(/^(https?:|\/)/.test(s.img) ? s.img : '/' + s.img)}&w=${w}&q=75` :[...s.rew, ...s.req].map((l) => (D.icons ?? {})[l.item]).find(Boolean) ?? '');
+const ovOf = (id) => { try { return { excluded: JSON.parse(store.get('ov:' + id))?.excluded || {} }; } catch { return { excluded: {} }; } };
+function setOv(group, key, val) {
+  const g = (ovCur[group] ??= {});
+  if (val === undefined) delete g[key]; else g[key] = val;
+  store.set('ov:' + cur.id, JSON.stringify(ovCur));
+}
+
+async function load(refresh) {
+  const btn = $('#atualizar');
+  btn.disabled = true;
+  $('#info').textContent = 'Carregando...';
+  try {
+    const r = await fetch(STATIC ? `api/data-${lgFile(liga)}.json` : `/api/data?league=${encodeURIComponent(liga)}${refresh ? '&refresh=1' : ''}`);
+    const j = await r.json().catch(() => ({})); // static copy: a missing file is an HTML 404
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    D = j;
+    $('#nav').innerHTML = '<h4>Estratégias</h4><a href="#/top">Top lucros</a>' + D.categories.map((c) => `<a href="#/c/${encodeURIComponent(c.slug)}"><span class="wi">${ico(c.icon, 's')}${esc(c.name)}</span> <span class="cnt">${esc(c.count)}</span></a>`).join('');
+    $('#info').innerHTML = `Preços: ${D.pricesAt ? esc(new Date(D.pricesAt).toLocaleString('pt-BR')) : '-'}<br>Drop rates: ${esc(new Date(D.syncedAt).toLocaleDateString('pt-BR'))}`;
+    route();
+  } catch (e) {
+    $('#info').textContent = '';
+    main.innerHTML = `<p class="err">Erro: ${esc(e.message)}</p>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function route() {
+  if (!D) return;
+  const hash = location.hash || '#/top';
+  navOn();
+  const [k, ...rest] = hash.replace(/^#\/?/, '').split('/');
+  const arg = dec(rest.join('/'));
+  if (k === 's') detail(arg);
+  else if (k === 'x') extraView(arg);
+  else listView(k === 'c' ? arg : null);
+}
+
+function listView(cat) {
+  cur = null;
+  curCat = cat;
+  main.innerHTML = `
+    <h2>${esc(cat ? catName(cat) : 'Top lucros')}</h2>
+    <div id="sum" class="stats"></div>
+    <div class="ctl">
+      <label>Buscar <input id="q" type="search" placeholder="Buscar por título..." value="${esc(lf.q)}"></label>
+      <label>Ordenar <select id="sort">${Object.keys(SORTS).map((n) => `<option${n === lf.sort ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+      <label><input type="checkbox" id="pos"${lf.pos ? ' checked' : ''}> Só lucrativas</label>
+      <label><input type="checkbox" id="drop"${lf.drop ? ' checked' : ''}> Só confiáveis (com drop e preços)</label>
+    </div>
+    <div id="podio" class="podio"></div>
+    <div id="tbl"></div>`;
+  fillList();
+}
+
+function fillList() {
+  lf = { q: $('#q').value, sort: $('#sort').value, pos: $('#pos').checked, drop: $('#drop').checked };
+  const q = lf.q.trim().toLowerCase();
+  const all = D.strategies.filter((s) => !curCat || s.category === curCat).map((s) => ({ s, c: calc(s, D.live, ovOf(s.id)) }));
+  const rows = all
+    .filter((x) => (!q || (x.s.title || '').toLowerCase().includes(q)) && (!lf.pos || x.c.profit > 0) && (!lf.drop || (!x.c.noDropData && !x.c.noPrice)))
+    .sort(SORTS[lf.sort]);
+  const n = all.length;
+  const nPos = all.filter((x) => x.c.profit > 0).length, share = n ? (nPos / n) * 100 : 0;
+  const best = n ? Math.max(...all.map((x) => x.c.profit)) : NaN;
+  $('#sum').innerHTML = `<div class="stat"><span class="lbl">Estratégias</span><b>${esc(n)}</b></div><div class="stat"><span class="lbl">Lucrativas</span><b>${esc(nPos)}</b><small>${esc(n ? `${pct(share)} do total` : '-')}</small><div class="bar"><i style="width:${share.toFixed(1)}%"></i></div></div><div class="stat"><span class="lbl">Lucro médio</span><b>${esc(money(n ? all.reduce((a, x) => a + x.c.profit, 0) / n : NaN))}</b></div><div class="stat"><span class="lbl">Melhor lucro</span><b${best > 0 ? ' class="pos"' : ''}>${esc(money(best))}</b></div>`;
+  $('#podio').innerHTML = rows.slice(0, 3).map((x, i) => podCard(x, i)).join('');
+  $('#tbl').innerHTML = `<div class="card"><table><thead><tr><th class="num">#</th><th>Nome</th><th>Categoria</th><th class="num">Custo</th><th class="num">Esperado</th><th class="num">Lucro</th><th class="num">Margem %</th><th class="num">Runs</th><th class="num">Runs p/ 80%</th><th>Avisos</th></tr></thead><tbody>${rows.slice(0, 300).map((x, i) => rowHtml(x, i)).join('')}</tbody></table></div>${rows.length > 300 ? `<p class="muted">Mostrando 300 de ${rows.length}. Refine a busca.</p>` : ''}`;
+}
+
+function podCard({ s, c }, i) {
+  const cls = profitCls(c);
+  return `<a class="pod" href="#/s/${encodeURIComponent(s.id)}">${ico(simg(s, 128), 'l')}<span class="rk">#${i + 1}</span><span class="ttl">${esc(s.title)}</span><span class="chip">${esc(catName(s.category))}</span><b class="${cls}">${esc(profitTxt(c))}</b><small>Custo ${costHtml(c)} · Esperado ${esc(money(c.ev))} · Margem ${esc(c.costUnknown ? '-' : pct(c.margin))}</small></a>`;
+}
+
+function rowHtml({ s, c }, i) {
+  const av = [];
+  if (c.noDropData) av.push('sem dados de drop');
+  if (c.noPrice > 0) av.push(`${c.noPrice} sem preço`);
+  if (!s.fixed && c.topShare > 0.7) av.push(`1 item = ${Math.round(c.topShare * 100)}% do valor`);
+  if (c.snapshotPrices > 0) av.push(`${c.snapshotPrices} preços antigos`);
+  const cls = profitCls(c);
+  const mHtml = Number.isFinite(c.margin) && !c.costUnknown ? `<span class="pill${c.margin > 0 ? ' pos' : c.margin < 0 ? ' neg' : ''}">${esc(pct(c.margin))}</span>` : '-';
+  return `<tr><td class="num muted">${i + 1}</td><td><span class="wi">${ico(simg(s, 64))}<a class="name" href="#/s/${encodeURIComponent(s.id)}">${esc(s.title)}</a></span></td><td><span class="chip">${esc(catName(s.category))}</span></td><td class="num">${costHtml(c)}</td><td class="num">${esc(money(c.ev))}</td><td class="num ${cls}">${esc(profitTxt(c))}</td><td class="num">${mHtml}</td><td class="num">${(s.runs || 0).toLocaleString('pt-BR')}<br><small>${esc(s.versions)}</small></td><td class="num">${c.costUnknown || c.runs80 == null ? '-' : c.runs80.toLocaleString('pt-BR')}</td><td>${av.map((w) => `<span class="chip warn">${esc(w)}</span>`).join('')}</td></tr>`;
+}
+
+function detail(id) {
+  const s = D.strategies.find((x) => String(x.id) === id);
+  cur = s ?? null;
+  if (!s) { main.innerHTML = '<p>Estratégia não encontrada.</p>'; return; }
+  ovCur = ovOf(s.id);
+  const c = calc(s, D.live, ovCur);
+  const order = c.rew.map((_, i) => i).sort((a, b) => c.rew[b].expected - c.rew[a].expected);
+  main.innerHTML = `
+    <p><a class="chip" href="#/c/${encodeURIComponent(s.category)}">&larr; ${esc(catName(s.category))}</a></p>
+    <div class="hd">${ico(simg(s, 128), 'xl')}<h2>${esc(s.title)}</h2></div>
+    <div class="meta">
+      <span class="chip">Categoria: ${esc(catName(s.category))}</span>
+      <span class="chip">Versões: ${esc(s.versions) || '-'}</span>
+      <span class="chip">Runs: ${esc(s.runs)}</span>
+      <span class="chip">Contribuidores: ${esc(s.contributors)}</span>
+      <a class="chip" href="https://poe.how/economy/${encodeURIComponent(s.category)}/${encodeURIComponent(String(s.slug).toLowerCase().replace(/[^a-z0-9]+/g, '-'))}" target="_blank" rel="noopener">poe.how ↗</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="lbl">Custo</span><b data-k="cost"></b></div>
+      <div class="stat"><span class="lbl">Valor esperado</span><b data-k="ev"></b></div>
+      <div class="stat"><span class="lbl">Lucro</span><b data-k="profit"></b></div>
+      <div class="stat"><span class="lbl">Margem</span><b data-k="margin"></b></div>
+      <div class="stat"><span class="lbl">Runs p/ 80%</span><b data-k="runs80"></b></div>
+    </div>
+    <p class="note" id="unk"></p>
+    <h3>Composição do valor esperado</h3>
+    <div id="comp"></div>
+    <h3>Requisitos</h3>
+    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th><th class="num">Total</th><th>Fonte</th></tr></thead><tbody>${s.req.map((l, i) => `<tr data-r="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.req[i].unit)}</td><td class="num" data-k="total"></td><td data-k="src"></td></tr>`).join('')}</tbody></table></div>
+    <h3>Recompensas</h3>
+    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th><th class="num">Drop %</th><th>Excluir</th><th class="num">Valor esperado</th><th>Grupo</th><th>Fonte</th></tr></thead><tbody>${order.map((i) => { const l = s.rew[i]; return `<tr data-w="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.rew[i].unit)}</td><td class="num">${esc(pct(l.rate * 100))}</td><td><input type="checkbox" data-kind="excl" data-idx="${i}"></td><td class="num"><span data-k="expected"></span><div class="bar"><i data-k="bar"></i></div></td><td>${esc(l.group ?? '-')}</td><td data-k="src"></td></tr>`; }).join('')}</tbody></table></div>
+    <p><button id="reset">Limpar exclusões</button></p>`;
+  updateDetail();
+}
+
+const COMP = ['#d4a85a', '#6aa9ff', '#4cc38a', '#c98bdb', '#e5744b']; // cores das 5 maiores fatias
+const SRC = { live: ['ao vivo', 'pos'], snapshot: ['antigo', 'warn'] };
+const srcBadge = (s) => (Object.hasOwn(SRC, s) ? `<span class="chip ${SRC[s][1]}">${SRC[s][0]}</span>` : esc(s ?? '-'));
+// barra empilhada do valor esperado: 5 maiores + "Outros"
+function compHtml(rew, tot) {
+  if (!(tot > 0)) return '<p class="muted">Sem valor esperado.</p>';
+  const parts = rew.filter((l) => !l.excluded && l.expected > 0).sort((a, b) => b.expected - a.expected);
+  const segs = parts.slice(0, 5).map((l, i) => ({ name: l.name, v: l.expected, color: COMP[i] }));
+  const rest = parts.slice(5).reduce((a, l) => a + l.expected, 0);
+  if (rest > 0) segs.push({ name: 'Outros', v: rest, color: '#4a4f5a' });
+  const sh = segs.map((g) => ({ ...g, p: (g.v / tot) * 100 }));
+  return `<div class="comp">${sh.map((g) => `<i style="width:${g.p.toFixed(2)}%;background:${g.color}" title="${esc(`${g.name}: ${pct(g.p)}`)}"></i>`).join('')}</div>`
+    + `<div class="legend">${sh.map((g) => `<span><span class="dot" style="background:${g.color}"></span>${esc(g.name)} <small>${esc(pct(g.p))}</small></span>`).join('')}</div>`;
+}
+// updates text in place (the tables are not rebuilt)
+function updateDetail() {
+  const c = calc(cur, D.live, ovCur);
+  const top = { ev: money(c.ev), profit: profitTxt(c), margin: c.costUnknown ? '-' : pct(c.margin), runs80: c.costUnknown || c.runs80 == null ? '-' : c.runs80.toLocaleString('pt-BR') };
+  main.querySelector('b[data-k="cost"]').innerHTML = costHtml(c);
+  for (const k in top) main.querySelector(`b[data-k="${k}"]`).textContent = top[k];
+  main.querySelector('b[data-k="profit"]').className = profitCls(c);
+  const unk = c.req.length
+    ? 'O custo desta estratégia é desconhecido: não há preço para um ou mais itens de entrada nesta liga (nem no poe.how, nem no poe.ninja ou poe.watch). O lucro mostrado é o máximo possível, sem descontar esses itens.'
+    : 'O poe.how não cadastrou os itens de entrada desta estratégia, então o custo é desconhecido. O lucro mostrado é o valor esperado inteiro, sem descontar o custo.';
+  main.querySelector('#unk').textContent = c.costUnknown ? unk : '';
+  const tot = c.rew.reduce((a, l) => a + (l.excluded || !(l.expected > 0) ? 0 : l.expected), 0);
+  main.querySelector('#comp').innerHTML = compHtml(c.rew, tot);
+  main.querySelectorAll('tr[data-r]').forEach((tr) => {
+    const l = c.req[+tr.dataset.r];
+    tr.querySelector('[data-k="total"]').textContent = money(l.total);
+    tr.querySelector('[data-k="src"]').innerHTML = srcBadge(l.source);
+  });
+  main.querySelectorAll('tr[data-w]').forEach((tr) => {
+    const l = c.rew[+tr.dataset.w];
+    tr.querySelector('[data-k="expected"]').textContent = money(l.expected);
+    tr.querySelector('[data-k="bar"]').style.width = `${!l.excluded && l.expected > 0 && tot > 0 ? (l.expected / tot) * 100 : 0}%`;
+    tr.querySelector('[data-k="src"]').innerHTML = srcBadge(l.source);
+    tr.querySelector('input[data-kind="excl"]').checked = l.excluded;
+    tr.classList.toggle('off', !!l.excluded);
+  });
+}
+
+// calculadoras extras (extras/<slug>.mjs): uma tabela generica para qualquer uma delas
+function navOn() {
+  document.querySelectorAll('#nav a, #extras a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === (location.hash || '#/top')));
+}
+
+function extraView(slug) {
+  cur = null;
+  if (xv.slug !== slug) xv = { slug, sort: null, q: '', pos: false, data: null, err: null, busy: false, league: null };
+  main.innerHTML = `
+    <h2 id="xh"></h2>
+    <p class="note" id="xn"></p>
+    <p class="muted"><span id="xs"></span> <button id="xref">Atualizar</button> <span class="err" id="xe"></span></p>
+    <div class="ctl">
+      <label>Buscar <input id="xq" type="search" placeholder="Buscar..."></label>
+      <label id="xpl" hidden><input type="checkbox" id="xpos"> Só lucrativas</label>
+    </div>
+    <p class="muted" id="xcount"></p>
+    <div id="xtbl"></div>`;
+  $('#xq').value = xv.q;
+  $('#xpos').checked = xv.pos;
+  $('#xq').addEventListener('input', (e) => { xv.q = e.target.value; renderExtraTable(); });
+  $('#xpos').addEventListener('change', (e) => { xv.pos = e.target.checked; renderExtraTable(); });
+  $('#xref').addEventListener('click', () => loadExtra(true));
+  $('#xtbl').addEventListener('click', (e) => {
+    const th = e.target.closest('th[data-k]');
+    if (!th) return;
+    const k = th.dataset.k;
+    if (xv.sort?.key === k) xv.sort = { key: k, dir: xv.sort.dir === 'asc' ? 'desc' : 'asc' };
+    else xv.sort = { key: k, dir: xv.data.columns.find((c) => c.key === k).type === 'text' ? 'asc' : 'desc' };
+    renderExtraTable();
+  });
+  if (xv.league !== liga || (!xv.busy && !xv.data)) loadExtra(false);
+  else updateExtra();
+}
+
+async function loadExtra(refresh) {
+  const tok = ++xTok, slug = xv.slug, lg = liga;
+  if (xv.league !== lg) xv.data = null;
+  Object.assign(xv, { league: lg, busy: true, err: null });
+  updateExtra();
+  try {
+    const r = await fetch(STATIC ? `api/extra-${slug}-${lgFile(lg)}.json` : `/api/extra/${encodeURIComponent(slug)}?league=${encodeURIComponent(lg)}${refresh ? '&refresh=1' : ''}`);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || (r.status === 404 ? 'Sem dados para esta liga' : `HTTP ${r.status}`));
+    if (tok === xTok) { xv.data = j; xv.sort ??= j.defaultSort; }
+  } catch (e) {
+    if (tok === xTok) xv.err = e.message;
+  } finally {
+    // resposta de outra liga/calculadora e descartada; so repinta se a view ainda estiver na tela
+    if (tok === xTok) { xv.busy = false; if ($('#xtbl')) updateExtra(); }
+  }
+}
+
+function updateExtra() {
+  const d = xv.data;
+  $('#xh').textContent = d?.title ?? EXTRAS.find((x) => x.slug === xv.slug)?.title ?? xv.slug;
+  $('#xn').textContent = d?.note ?? '';
+  $('#xs').innerHTML = xv.busy ? '<span class="spin"></span> Carregando... (pode levar até um minuto)' : esc(d ? `Atualizado: ${new Date(d.at).toLocaleString('pt-BR')}${d.stale ? ' (dados antigos)' : ''}` : '');
+  $('#xref').disabled = xv.busy;
+  $('#xe').textContent = xv.err ? `Erro: ${xv.err}` : '';
+  $('#xpl').hidden = !d?.columns.some((c) => c.key === 'profit');
+  renderExtraTable();
+}
+
+// so o contador e a tabela sao refeitos aqui, assim a caixa de busca nao perde o foco ao digitar
+function renderExtraTable() {
+  const d = xv.data;
+  if (!d) { $('#xcount').textContent = ''; $('#xtbl').innerHTML = ''; return; }
+  const q = xv.q.trim().toLowerCase(), textKeys = d.columns.filter((c) => c.type === 'text').map((c) => c.key);
+  const rows = d.rows.filter((r) => (!q || textKeys.some((k) => String(r[k] ?? '').toLowerCase().includes(q))) && (!xv.pos || r.profit > 0));
+  const { key, dir } = xv.sort ?? d.defaultSort ?? {};
+  const sgn = dir === 'asc' ? 1 : -1;
+  rows.sort((a, b) => {
+    const x = a[key], y = b[key];
+    if (x == null || y == null) return (x == null) - (y == null); // vazios sempre no fim
+    return sgn * (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'pt-BR'));
+  });
+  const shown = rows.slice(0, 500);
+  $('#xcount').textContent = `Total: ${d.rows.length}` + (rows.length < d.rows.length ? ` · Com o filtro: ${rows.length}` : '') + (shown.length < rows.length ? ` · Mostrando ${shown.length} de ${rows.length}` : '');
+  const head = d.columns.map((c) => `<th class="${c.type === 'text' ? '' : 'num'}${c.key === key ? ' sorted' : ''}" data-k="${esc(c.key)}">${esc(c.label)}${c.key === key ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}</th>`).join('');
+  const iconKey = d.columns.find((c) => c.type === 'text')?.key; // o ícone da linha vai antes da 1ª coluna de texto
+  const body = shown.map((r) => `<tr>${d.columns.map((c) => `<td class="${xcls(c, r)}">${c.key === iconKey && r.icon ? `<span class="wi">${ico(r.icon)}${xfmt(c, r[c.key])}</span>` : xfmt(c, r[c.key])}</td>`).join('')}</tr>`).join('');
+  $('#xtbl').innerHTML = `<div class="card"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function xcls(c, r) {
+  return (c.type === 'text' ? '' : 'num') + (c.type === 'chaos' && c.key === 'profit' ? (r.profit > 0 ? ' pos' : r.profit < 0 ? ' neg' : '') : '');
+}
+
+function xfmt(c, v) {
+  if (v == null) return '-';
+  if (c.type === 'chaos') return esc(money(v));
+  if (c.type === 'text') return esc(v);
+  if (!Number.isFinite(v)) return '-';
+  if (c.type === 'int') return (Math.round(v) || 0).toLocaleString('pt-BR');
+  if (c.type === 'pct') return `${r1(v)}%`;
+  return r1(v);
+}
+
+function onEdit(e) {
+  const t = e.target;
+  if (['q', 'sort', 'pos', 'drop'].includes(t.id)) return fillList();
+  const kind = t.dataset.kind;
+  if (!cur || !kind) return;
+  if (kind === 'excl') setOv('excluded', t.dataset.idx, t.checked ? true : undefined);
+  updateDetail();
+}
+
+function onClick(e) {
+  if (e.target.id === 'reset' && cur) { store.del('ov:' + cur.id); detail(String(cur.id)); }
+}
+
+main.addEventListener('input', onEdit);
+main.addEventListener('change', onEdit);
+main.addEventListener('click', onClick);
+window.addEventListener('hashchange', route);
+
+const $liga = $('#liga'), $moeda = $('#moeda');
+$liga.innerHTML = LEAGUES.map((l) => `<option>${l}</option>`).join('');
+$liga.value = liga;
+$moeda.value = moeda;
+$liga.addEventListener('change', () => { liga = $liga.value; store.set('liga', liga); load(false); });
+$moeda.addEventListener('change', () => { moeda = $moeda.value; store.set('moeda', moeda); route(); });
+$('#atualizar').addEventListener('click', () => load(true));
+fetch(STATIC ? 'api/extras.json' : '/api/extras').then((r) => (r.ok ? r.json() : [])).then((list) => {
+  EXTRAS = list;
+  $('#extras').innerHTML = list.length ? `<h4>Calculadoras</h4>${list.map((x) => `<a href="#/x/${encodeURIComponent(x.slug)}">${esc(x.title)}</a>`).join('')}` : '';
+  navOn();
+}).catch(() => {});
+load(false);
+</script>
+</body>
+</html>

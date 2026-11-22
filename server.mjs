@@ -33,10 +33,10 @@ const api = async (u, res) => {
   const fresh = cache && u.searchParams.get('refresh') !== '1' && Date.now() - Date.parse(cache.at) < HOUR;
   if (!fresh) {
     const wanted = new Set(base.strategies.flatMap((s) => [...s.req, ...s.rew].map((l) => l.item)));
-    const prices = await fetchLivePrices(league, wanted).catch(() => ({}));
+    const { prices, counts } = await fetchLivePrices(league, wanted).catch(() => ({ prices: {}, counts: {} }));
     // empty result = every request failed: keep the old cache if there is one
     if (Object.keys(prices).length) {
-      cache = { at: new Date().toISOString(), prices };
+      cache = { at: new Date().toISOString(), prices, counts };
       await writeFile(file, JSON.stringify(cache));
     }
   }
@@ -49,6 +49,7 @@ const api = async (u, res) => {
     strategies: base.strategies,
     icons: base.icons ?? {},
     live: cache?.prices ?? {},
+    counts: cache?.counts ?? {},
   });
 };
 

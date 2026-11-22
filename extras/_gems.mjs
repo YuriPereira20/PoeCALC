@@ -21,7 +21,7 @@ function ssrPayload(html) {
   let rsc = '';
   for (const m of html.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g)) rsc += JSON.parse(m[1]);
   const i = rsc.indexOf('"compactData":');
-  if (i < 0) throw new Error('gem page: compactData nao encontrado');
+  if (i < 0) throw new Error('gem page: compactData não encontrado');
   let j = i + 14, depth = 0, str = false;
   for (; j < rsc.length; j++) {
     const ch = rsc[j];

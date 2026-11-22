@@ -10,12 +10,13 @@ const getJson = async (url) => {
   return r.json();
 };
 
-// chaos prices for the wanted item ids only; a failed request is skipped, never aborts
+// chaos prices and poe.ninja listing counts for the wanted item ids only; a failed request is skipped, never aborts
 export async function fetchLivePrices(league, wantedIds) {
   const wanted = new Set(wantedIds);
   wanted.add('divine-orb');
-  const prices = {};
-  const put = (id, v) => { if (wanted.has(id) && !(id in prices) && Number.isFinite(v)) prices[id] = v; };
+  const prices = {}, counts = {};
+  // a count is kept only together with the price of the same line (exchange lines have no count)
+  const put = (id, v, n) => { if (wanted.has(id) && !(id in prices) && Number.isFinite(v)) { prices[id] = v; if (n != null) counts[id] = n; } };
   const warn = (what, e) => console.warn(`preço ignorado (${what}): ${e.message}`);
   const lg = encodeURIComponent(league);
 
@@ -31,15 +32,15 @@ export async function fetchLivePrices(league, wantedIds) {
     try {
       const j = await getJson(`https://poe.ninja/poe1/api/economy/stash/current/item/overview?league=${lg}&type=${t}`);
       for (const l of j.lines) {
-        put(l.detailsId, l.chaosValue);
-        if (t === 'UniqueMap') uniqueMaps.set(l.detailsId, l.chaosValue);
+        put(l.detailsId, l.chaosValue, l.listingCount);
+        if (t === 'UniqueMap') uniqueMaps.set(l.detailsId, l);
       }
     } catch (e) { warn(t, e); }
   }
   // poe.ninja lists unique maps only as tier 0 (cortex-t0), but the strategies ask for cortex-t11 and so on
   for (const id of wanted) {
     const m = /^(.+)-t\d+$/.exec(id);
-    if (m) put(id, uniqueMaps.get(`${m[1]}-t0`));
+    if (m) { const u = uniqueMaps.get(`${m[1]}-t0`); put(id, u?.chaosValue, u?.listingCount); }
   }
 
   const watchIds = [...wanted].filter((id) => /^poewatch-\d+(-|$)/.test(id));
@@ -52,5 +53,5 @@ export async function fetchLivePrices(league, wantedIds) {
     }
     for (const id of watchIds) put(id, byId.get(Number(id.match(/^poewatch-(\d+)/)[1])));
   }
-  return prices;
+  return { prices, counts };
 }

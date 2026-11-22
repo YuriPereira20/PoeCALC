@@ -1,5 +1,5 @@
 // 6-Link Profit: reproduz o calculo client-side de poe.how/economy/six-link-profit (configuracao padrao).
-import { trpc } from './_lib.mjs';
+import { trpc, ninjaIcons } from './_lib.mjs';
 
 export const title = 'Lucro 6-Link';
 export const order = 60;
@@ -13,9 +13,10 @@ export async function load(league) {
   let data;
   try { data = await trpc('sixLinkProfit.market', { league }); } catch (e) {
     if (!/active supported league/.test(e.message)) throw e;
-    return { note: `O poe.how so calcula 6-link para as ligas ativas (Covens e Hardcore Covens); "${league}" nao e suportada.`, defaultSort: { key: 'name', dir: 'asc' }, columns: [{ key: 'name', label: 'Única', type: 'text' }], rows: [] };
+    return { note: `O poe.how só calcula 6-link para as ligas ativas (Covens e Hardcore Covens); "${league}" não é suportada.`, defaultSort: { key: 'name', dir: 'asc' }, columns: [{ key: 'name', label: 'Única', type: 'text' }], rows: [] };
   }
   const { pairs, inputs: i } = data;
+  const icons = await ninjaIcons(league, ['UniqueArmour', 'UniqueWeapon']);
   const f = i.fusing ?? null;
   const links = [
     ['beast', sum(i.blackMorrigan, i.craicicSandSpitter)],
@@ -39,13 +40,13 @@ export async function load(league) {
     const cost = link && socket != null ? base.chaosValue + socket + link[1] : null;
     const profit = cost == null ? null : p.sixLink.chaosValue - cost;
     rows.push({
-      name: p.name, base: p.baseType + (p.variant ? ` (${p.variant})` : ''), buy: base.src,
+      name: p.name, icon: icons.get(p.name), base: p.baseType + (p.variant ? ` (${p.variant})` : ''), buy: base.src,
       basePrice: base.chaosValue, baseListings: base.listingCount, sixLink: p.sixLink.chaosValue, sixListings: p.sixLink.listingCount,
       cost, method: link ? METHOD[link[0]] : null, profit, roi: profit == null || cost <= 0 ? null : 100 * profit / cost,
     });
   }
   return {
-    note: `Unicas que valem mais 6-linkadas do que base + custo de linkar. Igual ao padrao do poe.how: base mais barata entre 0-4L e 5L, 6 sockets pelo mais barato entre Omen of the Jeweller+Jeweller e bancada (350 jewellers), 6-link pelo metodo mais barato (Beastcraft, 1500 fusings, Omen of Connections+1 fusing ou spam de fusing a qualidade ${QUALITY}%), so mercados com >= ${MIN_LISTINGS} anuncios.`,
+    note: `Únicas que valem mais 6-linkadas do que base + custo de linkar. Igual ao padrão do poe.how: base mais barata entre 0-4L e 5L, 6 sockets pelo mais barato entre Omen of the Jeweller+Jeweller e bancada (350 jewellers), 6-link pelo método mais barato (Beastcraft, 1500 fusings, Omen of Connections+1 fusing ou spam de fusing a qualidade ${QUALITY}%), só mercados com >= ${MIN_LISTINGS} anúncios.`,
     defaultSort: { key: 'profit', dir: 'desc' },
     columns: [
       { key: 'name', label: 'Única', type: 'text' },

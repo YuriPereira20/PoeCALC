@@ -1,12 +1,14 @@
 // Gemas: Awakened ate nivel 5 via beastcraft. Igual a poe.how/economy/gem/awakened-leveling:
 // lucro = preco nv5 - (gema nv1 + N x Wild Brambleback).
 import { loadTab, price, conf } from './_gems.mjs';
+import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Awakened via Beast';
 export const order = 85;
 
 export async function load(league) {
   const { records } = await loadTab('awakened-leveling');
+  const icons = await ninjaIcons(league, ['SkillGem']);
   const rows = [];
   for (const r of records) {
     const b = r.awakenedBeastcraft;
@@ -17,14 +19,14 @@ export async function load(league) {
     if (cost == null || sell == null) continue; // site so lista quem tem custo e venda
     const profit = sell - cost;
     rows.push({
-      name: r.name, base, beasts, beastInfo: `${b.beastCount}x ${b.beastDetailsId} @ ${unit}c`, cost, sell, profit,
+      name: r.name, icon: icons.get(r.name), base, beasts, beastInfo: `${b.beastCount}x ${b.beastDetailsId} @ ${unit}c`, cost, sell, profit,
       roi: cost > 0 ? 100 * profit / cost : null,
       conf: [conf(r.baseGem, league), conf(b.beastPrice, league), conf(r.leveledGem, league)].includes('low') ? 'baixa' : 'ok',
     });
   }
   rows.sort((a, b) => b.profit - a.profit);
   return {
-    note: 'Compra a Awakened nivel 1 e usa beastcraft (4 Wild Brambleback) para leva-la ao nivel 5. Lucro = venda nv5 - (gema nv1 + bestas). Mesmo calculo de poe.how. Sem precos para a liga Hardcore.',
+    note: 'Compra a Awakened nível 1 e usa beastcraft (4 Wild Brambleback) para levá-la ao nível 5. Lucro = venda nv5 - (gema nv1 + bestas). Mesmo cálculo de poe.how. Sem preços para a liga Hardcore.',
     defaultSort: { key: 'profit', dir: 'desc' },
     columns: [
       { key: 'name', label: 'Gema', type: 'text' },

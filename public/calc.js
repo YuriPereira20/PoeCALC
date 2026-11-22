@@ -1,6 +1,6 @@
 // Pure calculation (no DOM). Used by the page and by test.mjs.
 // ov = { price: {[item]: chaos}, rate: {[rewardIndex]: 0..1}, excluded: {[rewardIndex]: true} } (all optional)
-export function calc(s, live = {}, ov = {}) {
+export function calc(s, live = {}, ov = {}, counts = {}) {
   const P = ov.price || {}, R = ov.rate || {}, X = ov.excluded || {};
   // price: manual override > live > snapshot
   const unitOf = (l) => P[l.item] ?? live[l.item] ?? l.price;
@@ -22,7 +22,7 @@ export function calc(s, live = {}, ov = {}) {
       ev += expected;
       variance += rate * (1 - rate) * v * v;
     }
-    return { ...l, unit, rate, excluded, expected, source: srcOf(l) };
+    return { ...l, unit, rate, excluded, expected, count: counts[l.item], source: srcOf(l) };
   });
 
   const profit = ev - cost;
@@ -40,6 +40,8 @@ export function calc(s, live = {}, ov = {}) {
     snapshotPrices: [...req, ...rew].filter((l) => l.source === 'snapshot').length,
     // lines that count but have no price: cost or value is understated
     noPrice: [...req.filter((l) => l.cheapest === true), ...rew.filter((l) => !l.excluded && l.rate > 0)].filter((l) => !(l.unit > 0)).length,
+    // a reward worth >= 20% of the EV with < 10 listings: its price may not hold
+    lowLiq: rew.filter((l) => !l.excluded && l.expected > 0 && l.expected >= 0.2 * ev && Number.isFinite(l.count) && l.count < 10).length,
     req,
     rew,
   };

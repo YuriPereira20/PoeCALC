@@ -86,6 +86,8 @@
   .chip.warn{color:var(--warn);background:var(--warn-soft);border-color:transparent}
   .chip.info{color:var(--info);background:var(--info-soft);border-color:transparent}
   td .chip{margin:2px 4px 2px 0}
+  .lk{flex:none;padding:0 5px;border:1px solid var(--line);border-radius:999px;font-size:10px;line-height:15px;color:var(--muted);text-decoration:none;white-space:nowrap}
+  .lk:hover,.lk:focus-visible{color:var(--text);border-color:#3a3f4b}
   .meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
   .comp{display:flex;overflow:hidden;height:14px;border-radius:999px;background:var(--panel2)}
   .comp > i{display:block;height:100%;flex:none}
@@ -116,6 +118,17 @@
     aside{position:static;height:auto;width:auto;border-right:0;border-bottom:1px solid var(--line)}
     main{padding:16px;overflow-x:auto}
     .card{overflow-x:auto}
+    /* sidebar compacta: Liga e Moeda lado a lado, navs em faixas de chips (senao o conteudo fica abaixo da dobra) */
+    .side-ctl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px}
+    .side-ctl label{margin:0}
+    #atualizar,#info{grid-column:1/-1}
+    #info{margin:0}
+    aside h4{margin:12px 10px 4px}
+    nav{overflow-x:auto;white-space:nowrap}
+    nav a{display:inline-flex;gap:6px;margin:0 6px 6px 0;padding:5px 10px;font-size:13px;border:1px solid var(--line);border-radius:999px;background:var(--panel2);vertical-align:middle}
+    nav a.on{box-shadow:none;border-color:var(--accent)}
+    .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .podio{grid-template-columns:minmax(0,1fr)}
   }
 </style>
 </head>
@@ -167,7 +180,7 @@ let moeda = store.get('moeda') === 'div' ? 'div' : 'c';
 let cur = null;                              // estrategia aberta no detalhe
 let curCat = null;                           // categoria da lista
 let ovCur = {};                              // ajustes da estrategia aberta
-let lf = { q: '', sort: 'Lucro maior', pos: false, drop: false };
+let lf = { q: '', sort: 'Lucro maior', pos: false, drop: false, unk: false };
 let EXTRAS = [];                             // calculadoras extras (/api/extras)
 let xv = {};                                 // calculadora aberta: slug, league, data, err, busy, sort, q, pos
 let xTok = 0;                                // numero da ultima requisicao de calculadora
@@ -185,6 +198,13 @@ const profitCls = (c) => (c.costUnknown ? 'muted' : c.profit > 0 ? 'pos' : c.pro
 const unitHtml = (u) => (u > 0 ? esc(money(u)) : '<span class="chip warn">sem preço</span>');
 const catName = (slug) => D.categories.find((c) => c.slug === slug)?.name ?? slug;
 const wiki = (name) => `<a href="https://www.poewiki.net/wiki/${encodeURIComponent(name ?? '')}" target="_blank" rel="noopener">${esc(name)}</a>`;
+// Mercado (busca no trade oficial da liga) e Wiki; sem liga, só Wiki (título da estratégia); sem nome, nada
+const links = (name, league) => {
+  if (!name) return '';
+  const a = (href, title, txt) => `<a class="lk" href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="${title}">${txt}</a>`;
+  const mk = league ? a(`https://www.pathofexile.com/trade/search/${encodeURIComponent(league)}?q=${encodeURIComponent(JSON.stringify({ query: { term: name } }))}`, 'Abrir no mercado oficial', 'Mercado') : '';
+  return mk + a(`https://www.poewiki.net/index.php?search=${encodeURIComponent(name)}`, 'Abrir na wiki', 'Wiki');
+};
 const ico = (url, cls = '') => (url ? `<img class="ico ${cls}" src="${esc(url)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : '');
 // arte da estratégia: imagem do poe.how redimensionada; sem ela, ícone do primeiro item
 const simg = (s, w) => (s.img ? `https://poe.how/_next/image?url=${encodeURIComponent(/^(https?:|\/)/.test(s.img) ? s.img : '/' + s.img)}&w=${w}&q=75` :[...s.rew, ...s.req].map((l) => (D.icons ?? {})[l.item]).find(Boolean) ?? '');
@@ -237,6 +257,7 @@ function listView(cat) {
       <label>Ordenar <select id="sort">${Object.keys(SORTS).map((n) => `<option${n === lf.sort ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
       <label><input type="checkbox" id="pos"${lf.pos ? ' checked' : ''}> Só lucrativas</label>
       <label><input type="checkbox" id="drop"${lf.drop ? ' checked' : ''}> Só confiáveis (com drop e preços)</label>
+      <label><input type="checkbox" id="unk"${lf.unk ? ' checked' : ''}> Mostrar custo desconhecido</label>
     </div>
     <div id="podio" class="podio"></div>
     <div id="tbl"></div>`;
@@ -244,16 +265,18 @@ function listView(cat) {
 }
 
 function fillList() {
-  lf = { q: $('#q').value, sort: $('#sort').value, pos: $('#pos').checked, drop: $('#drop').checked };
+  lf = { q: $('#q').value, sort: $('#sort').value, pos: $('#pos').checked, drop: $('#drop').checked, unk: $('#unk').checked };
   const q = lf.q.trim().toLowerCase();
-  const all = D.strategies.filter((s) => !curCat || s.category === curCat).map((s) => ({ s, c: calc(s, D.live, ovOf(s.id)) }));
-  const rows = all
+  const all = D.strategies.filter((s) => !curCat || s.category === curCat).map((s) => ({ s, c: calc(s, D.live, ovOf(s.id), D.counts) }));
+  // lucro de custo desconhecido é só um teto: fica fora de tudo, salvo com o checkbox marcado
+  const shown = all.filter((x) => lf.unk || !x.c.costUnknown), hidden = all.length - shown.length;
+  const rows = shown
     .filter((x) => (!q || (x.s.title || '').toLowerCase().includes(q)) && (!lf.pos || x.c.profit > 0) && (!lf.drop || (!x.c.noDropData && !x.c.noPrice)))
     .sort(SORTS[lf.sort]);
-  const n = all.length;
-  const nPos = all.filter((x) => x.c.profit > 0).length, share = n ? (nPos / n) * 100 : 0;
-  const best = n ? Math.max(...all.map((x) => x.c.profit)) : NaN;
-  $('#sum').innerHTML = `<div class="stat"><span class="lbl">Estratégias</span><b>${esc(n)}</b></div><div class="stat"><span class="lbl">Lucrativas</span><b>${esc(nPos)}</b><small>${esc(n ? `${pct(share)} do total` : '-')}</small><div class="bar"><i style="width:${share.toFixed(1)}%"></i></div></div><div class="stat"><span class="lbl">Lucro médio</span><b>${esc(money(n ? all.reduce((a, x) => a + x.c.profit, 0) / n : NaN))}</b></div><div class="stat"><span class="lbl">Melhor lucro</span><b${best > 0 ? ' class="pos"' : ''}>${esc(money(best))}</b></div>`;
+  const n = shown.length;
+  const nPos = shown.filter((x) => x.c.profit > 0).length, share = n ? (nPos / n) * 100 : 0;
+  const best = n ? Math.max(...shown.map((x) => x.c.profit)) : NaN;
+  $('#sum').innerHTML = `<div class="stat"><span class="lbl">Estratégias</span><b>${esc(n)}</b>${hidden ? `<small>${hidden} ocultas (custo desconhecido)</small>` : ''}</div><div class="stat"><span class="lbl">Lucrativas</span><b>${esc(nPos)}</b><small>${esc(n ? `${pct(share)} do total` : '-')}</small><div class="bar"><i style="width:${share.toFixed(1)}%"></i></div></div><div class="stat"><span class="lbl">Lucro médio</span><b>${esc(money(n ? shown.reduce((a, x) => a + x.c.profit, 0) / n : NaN))}</b></div><div class="stat"><span class="lbl">Melhor lucro</span><b${best > 0 ? ' class="pos"' : ''}>${esc(money(best))}</b></div>`;
   $('#podio').innerHTML = rows.slice(0, 3).map((x, i) => podCard(x, i)).join('');
   $('#tbl').innerHTML = `<div class="card"><table><thead><tr><th class="num">#</th><th>Nome</th><th>Categoria</th><th class="num">Custo</th><th class="num">Esperado</th><th class="num">Lucro</th><th class="num">Margem %</th><th class="num">Runs</th><th class="num">Runs p/ 80%</th><th>Avisos</th></tr></thead><tbody>${rows.slice(0, 300).map((x, i) => rowHtml(x, i)).join('')}</tbody></table></div>${rows.length > 300 ? `<p class="muted">Mostrando 300 de ${rows.length}. Refine a busca.</p>` : ''}`;
 }
@@ -267,6 +290,7 @@ function rowHtml({ s, c }, i) {
   const av = [];
   if (c.noDropData) av.push('sem dados de drop');
   if (c.noPrice > 0) av.push(`${c.noPrice} sem preço`);
+  if (c.lowLiq > 0) av.push(`${c.lowLiq} com pouca liquidez`);
   if (!s.fixed && c.topShare > 0.7) av.push(`1 item = ${Math.round(c.topShare * 100)}% do valor`);
   if (c.snapshotPrices > 0) av.push(`${c.snapshotPrices} preços antigos`);
   const cls = profitCls(c);
@@ -279,11 +303,11 @@ function detail(id) {
   cur = s ?? null;
   if (!s) { main.innerHTML = '<p>Estratégia não encontrada.</p>'; return; }
   ovCur = ovOf(s.id);
-  const c = calc(s, D.live, ovCur);
+  const c = calc(s, D.live, ovCur, D.counts);
   const order = c.rew.map((_, i) => i).sort((a, b) => c.rew[b].expected - c.rew[a].expected);
   main.innerHTML = `
     <p><a class="chip" href="#/c/${encodeURIComponent(s.category)}">&larr; ${esc(catName(s.category))}</a></p>
-    <div class="hd">${ico(simg(s, 128), 'xl')}<h2>${esc(s.title)}</h2></div>
+    <div class="hd">${ico(simg(s, 128), 'xl')}<h2>${esc(s.title)}</h2>${links(s.title)}</div>
     <div class="meta">
       <span class="chip">Categoria: ${esc(catName(s.category))}</span>
       <span class="chip">Versões: ${esc(s.versions) || '-'}</span>
@@ -302,9 +326,9 @@ function detail(id) {
     <h3>Composição do valor esperado</h3>
     <div id="comp"></div>
     <h3>Requisitos</h3>
-    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th><th class="num">Total</th><th>Fonte</th></tr></thead><tbody>${s.req.map((l, i) => `<tr data-r="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.req[i].unit)}</td><td class="num" data-k="total"></td><td data-k="src"></td></tr>`).join('')}</tbody></table></div>
+    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th><th class="num">Total</th><th>Fonte</th></tr></thead><tbody>${s.req.map((l, i) => `<tr data-r="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}${links(l.name, liga)}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.req[i].unit)}</td><td class="num" data-k="total"></td><td data-k="src"></td></tr>`).join('')}</tbody></table></div>
     <h3>Recompensas</h3>
-    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th><th class="num">Drop %</th><th>Excluir</th><th class="num">Valor esperado</th><th>Grupo</th><th>Fonte</th></tr></thead><tbody>${order.map((i) => { const l = s.rew[i]; return `<tr data-w="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.rew[i].unit)}</td><td class="num">${esc(pct(l.rate * 100))}</td><td><input type="checkbox" data-kind="excl" data-idx="${i}"></td><td class="num"><span data-k="expected"></span><div class="bar"><i data-k="bar"></i></div></td><td>${esc(l.group ?? '-')}</td><td data-k="src"></td></tr>`; }).join('')}</tbody></table></div>
+    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th><th class="num">Anúncios</th><th class="num">Drop %</th><th>Excluir</th><th class="num">Valor esperado</th><th>Grupo</th><th>Fonte</th></tr></thead><tbody>${order.map((i) => { const l = s.rew[i], n = c.rew[i].count; return `<tr data-w="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}${links(l.name, liga)}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.rew[i].unit)}</td><td class="num${n < 10 ? ' warn' : ''}">${n == null ? '-' : n.toLocaleString('pt-BR')}</td><td class="num">${esc(pct(l.rate * 100))}</td><td><input type="checkbox" data-kind="excl" data-idx="${i}"></td><td class="num"><span data-k="expected"></span><div class="bar"><i data-k="bar"></i></div></td><td>${esc(l.group ?? '-')}</td><td data-k="src"></td></tr>`; }).join('')}</tbody></table></div>
     <p><button id="reset">Limpar exclusões</button></p>`;
   updateDetail();
 }
@@ -325,7 +349,7 @@ function compHtml(rew, tot) {
 }
 // updates text in place (the tables are not rebuilt)
 function updateDetail() {
-  const c = calc(cur, D.live, ovCur);
+  const c = calc(cur, D.live, ovCur, D.counts);
   const top = { ev: money(c.ev), profit: profitTxt(c), margin: c.costUnknown ? '-' : pct(c.margin), runs80: c.costUnknown || c.runs80 == null ? '-' : c.runs80.toLocaleString('pt-BR') };
   main.querySelector('b[data-k="cost"]').innerHTML = costHtml(c);
   for (const k in top) main.querySelector(`b[data-k="${k}"]`).textContent = top[k];
@@ -338,7 +362,7 @@ function updateDetail() {
   main.querySelector('#comp').innerHTML = compHtml(c.rew, tot);
   main.querySelectorAll('tr[data-r]').forEach((tr) => {
     const l = c.req[+tr.dataset.r];
-    tr.querySelector('[data-k="total"]').textContent = money(l.total);
+    tr.querySelector('[data-k="total"]').textContent = l.unit > 0 ? money(l.total) : '-';
     tr.querySelector('[data-k="src"]').innerHTML = srcBadge(l.source);
   });
   main.querySelectorAll('tr[data-w]').forEach((tr) => {
@@ -432,7 +456,12 @@ function renderExtraTable() {
   $('#xcount').textContent = `Total: ${d.rows.length}` + (rows.length < d.rows.length ? ` · Com o filtro: ${rows.length}` : '') + (shown.length < rows.length ? ` · Mostrando ${shown.length} de ${rows.length}` : '');
   const head = d.columns.map((c) => `<th class="${c.type === 'text' ? '' : 'num'}${c.key === key ? ' sorted' : ''}" data-k="${esc(c.key)}">${esc(c.label)}${c.key === key ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}</th>`).join('');
   const iconKey = d.columns.find((c) => c.type === 'text')?.key; // o ícone da linha vai antes da 1ª coluna de texto
-  const body = shown.map((r) => `<tr>${d.columns.map((c) => `<td class="${xcls(c, r)}">${c.key === iconKey && r.icon ? `<span class="wi">${ico(r.icon)}${xfmt(c, r[c.key])}</span>` : xfmt(c, r[c.key])}</td>`).join('')}</tr>`).join('');
+  // Mercado/Wiki só quando essa coluna é nome de item ou gema (name, base); colour e effect (notável) não têm
+  const lkKey = ['name', 'base'].includes(iconKey) ? iconKey : null;
+  const body = shown.map((r) => `<tr>${d.columns.map((c) => {
+    const lk = c.key === lkKey ? links(r[c.key], xv.league) : '';
+    return `<td class="${xcls(c, r)}">${c.key === iconKey && (r.icon || lk) ? `<span class="wi">${ico(r.icon)}${xfmt(c, r[c.key])}${lk}</span>` : xfmt(c, r[c.key])}</td>`;
+  }).join('')}</tr>`).join('');
   $('#xtbl').innerHTML = `<div class="card"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
@@ -452,7 +481,7 @@ function xfmt(c, v) {
 
 function onEdit(e) {
   const t = e.target;
-  if (['q', 'sort', 'pos', 'drop'].includes(t.id)) return fillList();
+  if (['q', 'sort', 'pos', 'drop', 'unk'].includes(t.id)) return fillList();
   const kind = t.dataset.kind;
   if (!cur || !kind) return;
   if (kind === 'excl') setOv('excluded', t.dataset.idx, t.checked ? true : undefined);

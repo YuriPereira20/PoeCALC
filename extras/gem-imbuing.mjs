@@ -1,6 +1,7 @@
 // Gemas: imbuir com Soul Core. Igual a poe.how/economy/gem/gem-imbuing com os filtros padrao
 // (esconde baixa confianca e jackpots, >= 1 resultado precificado). O "Safe EV" ja vem calculado do servidor.
 import { loadTab, price, conf, kind } from './_gems.mjs';
+import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Imbuir (Soul Core)';
 export const order = 84;
@@ -8,6 +9,7 @@ const CORE = { intelligence: 'Soul Core of Intellect', strength: 'Soul Core of M
 
 export async function load(league) {
   const { records, supplementaryPrices: sp } = await loadTab('gem-imbuing');
+  const icons = await ninjaIcons(league, ['SkillGem']);
   const rows = [];
   for (const r of records) {
     const gem = price(r.leveledGem, league);
@@ -26,7 +28,7 @@ export async function load(league) {
       if (low || priced < 1 || a.jackpotSkewed?.[league]) continue; // filtros padrao do site
       const profit = safeEv != null && cost != null ? safeEv - cost : null;
       rows.push({
-        name: r.name, kind: kind(r), core: CORE[attr], gem, coin, cost,
+        name: r.name, icon: icons.get(r.name), kind: kind(r), core: CORE[attr], gem, coin, cost,
         coverage: Math.round(100 * priced / a.outcomeCount),
         ev: a.expectedValue?.[league] ?? null, safeEv, profit,
         roi: profit != null && cost > 0 ? 100 * profit / cost : null,
@@ -36,7 +38,7 @@ export async function load(league) {
   }
   rows.sort((a, b) => (b.profit ?? -Infinity) - (a.profit ?? -Infinity));
   return {
-    note: 'Gema nivel 20 + Soul Core (Might=FOR, Finesse=DES, Intellect=INT, Instability=qualquer). Safe EV calculado pelo poe.how (media com teto contra outliers; ~1/3 de efeito ruim vale 0). Lucro = Safe EV - (gema + Soul Core). Filtros padrao do site: sem precos de baixa confianca, sem EV distorcido por jackpot, >= 1 resultado precificado. Sem precos para a liga Hardcore.',
+    note: 'Gema nível 20 + Soul Core (Might=FOR, Finesse=DES, Intellect=INT, Instability=qualquer). Safe EV calculado pelo poe.how (média com teto contra outliers; ~1/3 de efeito ruim vale 0). Lucro = Safe EV - (gema + Soul Core). Filtros padrão do site: sem preços de baixa confiança, sem EV distorcido por jackpot, >= 1 resultado precificado. Sem preços para a liga Hardcore.',
     defaultSort: { key: 'profit', dir: 'desc' },
     columns: [
       { key: 'name', label: 'Gema', type: 'text' },

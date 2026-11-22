@@ -29,14 +29,14 @@ export async function load(league) {
     const ev = vals.reduce((a, x) => a + (x.v ?? 0), 0) / outs.length;
     const top = vals.filter(x => x.v != null).sort((a, b) => b.v - a.v).slice(0, 3);
     rows.push({
-      colour: label, mode: q20 ? '20/20' : 'nivel 1', input, inputName, count: outs.length, priced: vals.filter(x => x.v != null).length,
+      colour: label, mode: q20 ? '20/20' : 'nível 1', input, inputName, count: outs.length, priced: vals.filter(x => x.v != null).length,
       ev, profit: input == null ? null : ev - input,
       jackpot: 100 * vals.filter(x => (x.v ?? 0) >= JACKPOT).length / outs.length,
       top: top.map(x => `${x.name} ${Math.round(x.v)}c`).join(' | '),
     });
   }
   return {
-    note: `Divine Font (Labirinto): transforma a gema numa transfigurada aleatoria da mesma cor. Como no poe.how: cada transfigurada (sem Vaal) da cor e igualmente provavel e sem preco vale 0; modo "nivel 1" usa 1c de entrada e preco das transfiguradas nv1, modo "20/20" usa a gema ativa 20/20 mais barata da cor e preco 20/20. Jackpot = chance de >= ${JACKPOT}c. Inclui precos de baixa confianca (padrao do site).`,
+    note: `Divine Font (Labirinto): transforma a gema numa transfigurada aleatória da mesma cor. Como no poe.how: cada transfigurada (sem Vaal) da cor é igualmente provável e sem preço vale 0; modo "nível 1" usa 1c de entrada e preço das transfiguradas nv1, modo "20/20" usa a gema ativa 20/20 mais barata da cor e preço 20/20. Jackpot = chance de >= ${JACKPOT}c. Inclui preços de baixa confiança (padrão do site).`,
     defaultSort: { key: 'profit', dir: 'desc' },
     columns: [
       { key: 'colour', label: 'Cor', type: 'text' },

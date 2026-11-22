@@ -1,11 +1,13 @@
 // Gemas: criar Vaal. Igual a poe.how/economy/gem/create-vaal: lucro = 25% x Vaal nv1 - (gema nv1 + Vaal Orb).
 import { loadTab, price, conf, kind } from './_gems.mjs';
+import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Criar Vaal';
 export const order = 81;
 
 export async function load(league) {
   const { records, supplementaryPrices: sp } = await loadTab('create-vaal');
+  const icons = await ninjaIcons(league, ['SkillGem']);
   const orb = price(sp.vaalOrb, league);
   const rows = [];
   if (orb != null) for (const r of records) {
@@ -14,14 +16,14 @@ export async function load(league) {
     if (base == null || vaal == null) continue;
     const cost = base + orb, ev = 0.25 * vaal, profit = ev - cost;
     rows.push({
-      name: r.name, kind: kind(r), base, vendor: r.baseGem.isVendor ? 'sim' : '', orb, vaal, ev, cost, profit,
+      name: r.name, icon: icons.get(r.name), kind: kind(r), base, vendor: r.baseGem.isVendor ? 'sim' : '', orb, vaal, ev, cost, profit,
       roi: cost > 0 ? 100 * profit / cost : null,
       conf: [conf(r.baseGem, league), conf(sp.vaalOrb, league), conf(r.corruptBaseVaal, league)].includes('low') ? 'baixa' : 'ok',
     });
   }
   rows.sort((a, b) => b.profit - a.profit);
   return {
-    note: 'Compra a gema nivel 1 (vendor conta 1c) e usa um Vaal Orb. Receita esperada = 25% x preco da versao Vaal nv1; qualquer outro resultado vale 0. Lucro = receita - (gema + Vaal Orb). Mesmo calculo de poe.how. Sem precos para a liga Hardcore.',
+    note: 'Compra a gema nível 1 (vendor conta 1c) e usa um Vaal Orb. Receita esperada = 25% x preço da versão Vaal nv1; qualquer outro resultado vale 0. Lucro = receita - (gema + Vaal Orb). Mesmo cálculo de poe.how. Sem preços para a liga Hardcore.',
     defaultSort: { key: 'profit', dir: 'desc' },
     columns: [
       { key: 'name', label: 'Gema', type: 'text' },

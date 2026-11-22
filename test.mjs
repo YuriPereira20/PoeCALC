@@ -52,4 +52,10 @@ assert.equal(calc(h).costUnknown, false); // every counted requirement has a pri
 assert.equal(calc(h, {}, { price: { A: 0 } }).costUnknown, true); // priced 0: cost would be understated
 assert.equal(calc({ ...h, req: [] }).costUnknown, true); // no requirement lines at all
 
+// liquidity: X is half of the EV (20 = X 10 + Y 10) and has 3 listings
+const half = { ...h, rew: [{ item: 'X', name: 'X', amount: 1, price: 10, group: null, rate: 1 }, { item: 'Y', name: 'Y', amount: 1, price: 10, group: null, rate: 1 }] };
+assert.equal(calc(half, {}, {}, { X: 3 }).lowLiq, 1);
+assert.equal(calc(half, {}, {}, { X: 50 }).lowLiq, 0);
+assert.equal(calc(half).lowLiq, 0);
+
 console.log(`ok ${strategies.length} estratégias`);

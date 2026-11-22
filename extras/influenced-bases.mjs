@@ -30,7 +30,7 @@ export async function load(league) {
     if (!total || page >= total.pageCount) break;
   }
   return {
-    note: `Rotas de craft para base influenciada (1: Exalted influenciado na base limpa; 2: base com outra influencia + reroll Harvest; 3: orb mais barato + Harvest). Custo, recompensa e lucro calculados pelo poe.how com o padrao do site (so precos de alta confianca, filtro deterministico ligado, preco conservador, 90% de sucesso no Harvest). Mostra so as ${rows.length} melhores rotas por lucro de ${total?.totalRoutes ?? '?'} (${total?.totalBaseGroups ?? '?'} grupos de base).`,
+    note: `Rotas de craft para base influenciada (1: Exalted influenciado na base limpa; 2: base com outra influência + reroll Harvest; 3: orb mais barato + Harvest). Custo, recompensa e lucro calculados pelo poe.how com o padrão do site (só preços de alta confiança, filtro determinístico ligado, preço conservador, 90% de sucesso no Harvest). Mostra só as ${rows.length} melhores rotas por lucro de ${total?.totalRoutes ?? '?'} (${total?.totalBaseGroups ?? '?'} grupos de base).`,
     defaultSort: { key: 'profit', dir: 'desc' },
     columns: [
       { key: 'base', label: 'Base', type: 'text' },

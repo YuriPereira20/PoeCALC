@@ -3,3 +3,4 @@ node_modules/
 .claude/
 # hourly cache, rebuilt by the server and by the Pages workflow
 data/prices-*.json
+deploy.log

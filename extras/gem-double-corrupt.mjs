@@ -1,6 +1,7 @@
 // Gemas: dupla corrupcao no templo (Doryani's Institute). Porta o modelo de poe.how/economy/gem/double-corrupt:
 // 2 corrupcoes distintas entre {nada, Vaal, nivel +-1, qualidade -10..+10}, cada uma 1/4 e a segunda 1/3 das restantes.
 import { loadTab, price, conf, kind } from './_gems.mjs';
+import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Dupla corrupção (templo)';
 export const order = 86;
@@ -44,6 +45,7 @@ const BASE_LEVEL = { awakened: 5, exceptional: 3, prime: 3, awakenedExceptional:
 
 export async function load(league) {
   const { records, supplementaryPrices: sp } = await loadTab('double-corrupt');
+  const icons = await ninjaIcons(league, ['SkillGem']);
   const prism = price(sp.gemcuttersPrism, league);
   const rows = [];
   if (prism != null) for (const r of records) {
@@ -65,19 +67,19 @@ export async function load(league) {
       const pr = prob ?? (dist(u, r.hasVaal).get(k) ?? 0);
       if (pr <= 0) return;
       seen.add(k);
-      const auto = [s.level === u + 1 ? '+1 nivel' : s.level === u - 1 ? '-1 nivel' : '', s.quality !== 20 ? `${s.quality}% qual.` : '', s.vaal ? 'Vaal' : ''].filter(Boolean).join(' & ');
+      const auto = [s.level === u + 1 ? '+1 nível' : s.level === u - 1 ? '-1 nível' : '', s.quality !== 20 ? `${s.quality}% qual.` : '', s.vaal ? 'Vaal' : ''].filter(Boolean).join(' & ');
       contrib.push({ label: label ?? (auto || `${s.level}/${s.quality}`), pr, p, low: conf(slot, league) === 'low' });
     };
     let lvl = price(r.corruptLevel, league) != null ? r.corruptLevel : null;
     if (!lvl && price(r.corruptLevelQ, league) != null) { const q = r.corruptLevelQ.matchingDetailsId ? parseId(r.corruptLevelQ.matchingDetailsId) : null; if (q?.quality != null && q.quality <= 20) lvl = r.corruptLevelQ; }
     add(r.perfectGem, 23); add(r.perfectVaal, 20); add(r.corruptVaalQuality, 23);
-    if (lvl) add(lvl, 20, `+1 nivel`, probWhere(u, r.hasVaal, s => !s.vaal && s.level === u + 1 && s.quality <= 20), true);
+    if (lvl) add(lvl, 20, `+1 nível`, probWhere(u, r.hasVaal, s => !s.vaal && s.level === u + 1 && s.quality <= 20), true);
     add(r.corruptQuality, 23); add(r.corruptVaal, 20);
     if (!contrib.length) continue;
     const ev = contrib.reduce((a, c) => a + c.pr * c.p, 0), profit = ev - cost;
     const sale = price(r.leveledQuality, league);
     rows.push({
-      name: r.name, kind: kind(r), base, quality, temple, cost, sale, ev, profit,
+      name: r.name, icon: icons.get(r.name), kind: kind(r), base, quality, temple, cost, sale, ev, profit,
       delta: sale == null ? null : profit - (sale - (base + quality)),
       roi: cost > 0 ? 100 * profit / cost : null,
       mix: contrib.map(c => `${c.label} ${(100 * c.pr).toFixed(2)}%: ${Math.round(c.p * 10) / 10}c`).join(' | '),
@@ -86,7 +88,7 @@ export async function load(league) {
   }
   rows.sort((a, b) => b.profit - a.profit);
   return {
-    note: 'Gema nv1 + 20 Gemcutter\'s Prism + sala Doryani\'s Institute (T3) para dupla corrupcao. EV soma so resultados bons precificados (+1 nivel, 23% qualidade, Vaal) com as chances do modelo do poe.how; o resto vale 0. Custo de upar a gema nao entra (igual ao site). "Δ vs vender" compara com vender a 20/20 sem corromper. Sem precos para a liga Hardcore.',
+    note: 'Gema nv1 + 20 Gemcutter\'s Prism + sala Doryani\'s Institute (T3) para dupla corrupção. EV soma só resultados bons precificados (+1 nível, 23% qualidade, Vaal) com as chances do modelo do poe.how; o resto vale 0. Custo de upar a gema não entra (igual ao site). "Δ vs vender" compara com vender a 20/20 sem corromper. Sem preços para a liga Hardcore.',
     defaultSort: { key: 'profit', dir: 'desc' },
     columns: [
       { key: 'name', label: 'Gema', type: 'text' },

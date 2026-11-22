@@ -20,3 +20,27 @@ export async function trpc(proc, json) {
   if (!j.result) throw new Error(`${proc}: ${JSON.stringify(j.error).slice(0, 300)}`);
   return j.result.data.json;
 }
+
+// poe.ninja stash lines of the given types -> Map name -> icon url. Memoized per league|type;
+// a failed request gives nothing and is retried on the next call.
+const ninjaCache = new Map();
+const ninjaLines = (league, type) => {
+  const key = `${league}|${type}`;
+  if (!ninjaCache.has(key)) {
+    ninjaCache.set(key, (async () => {
+      try {
+        const j = await getJson(`https://poe.ninja/poe1/api/economy/stash/current/item/overview?league=${encodeURIComponent(league)}&type=${type}`);
+        return j.lines.filter((l) => l.icon).map((l) => [l.name, l.icon]);
+      } catch {
+        ninjaCache.delete(key);
+        return [];
+      }
+    })());
+  }
+  return ninjaCache.get(key);
+};
+export async function ninjaIcons(league, types) {
+  const icons = new Map();
+  for (const pairs of await Promise.all(types.map((t) => ninjaLines(league, t)))) for (const [name, icon] of pairs) icons.set(name, icon);
+  return icons;
+}

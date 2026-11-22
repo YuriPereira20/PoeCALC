@@ -1,6 +1,7 @@
 // Gemas: Divine Font -> transfigurada da propria gema. Igual a poe.how/economy/gem/transfigure-random:
 // lucro = variante transfigurada mais cara - gema base (assume escolher a melhor; garantido com <= 3 variantes).
 import { loadTab } from './_gems.mjs';
+import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Transfigurar (própria gema)';
 export const order = 88;
@@ -15,6 +16,7 @@ function baseId(r) {
 
 export async function load(league) {
   const { records } = await loadTab('transfigure-random');
+  const icons = await ninjaIcons(league, ['SkillGem']);
   const groups = new Map();
   for (const r of records) if (r.metadata.transfigured && !r.tags.includes('vaal')) {
     const k = baseId(r); if (k) groups.set(k, [...(groups.get(k) ?? []), r]);
@@ -28,15 +30,15 @@ export async function load(league) {
     if (!priced.length) continue; // nenhuma variante com preco nesta liga/modo
     const base = val(q20 ? r.leveledQuality : r.baseGem, league), best = priced[0];
     rows.push({
-      name: r.name, mode: q20 ? '20/20' : 'nivel 1', base, variants: vars.length, priced: priced.length,
-      guaranteed: vars.length <= 3 ? 'sim' : 'nao', best: best?.name ?? null, bestPrice: best?.p ?? null,
+      name: r.name, icon: icons.get(r.name), mode: q20 ? '20/20' : 'nível 1', base, variants: vars.length, priced: priced.length,
+      guaranteed: vars.length <= 3 ? 'sim' : 'não', best: best?.name ?? null, bestPrice: best?.p ?? null,
       profit: base != null && best ? best.p - base : null,
       others: priced.slice(1).map(x => `${x.name} ${Math.round(x.p)}c`).join(' | '),
     });
   }
   rows.sort((a, b) => (b.profit ?? -Infinity) - (a.profit ?? -Infinity) || a.name.localeCompare(b.name));
   return {
-    note: 'Divine Font (Labirinto): converte a gema numa das suas versoes transfiguradas, escolhendo entre ate 3 opcoes. Como no poe.how: lucro = variante mais cara - preco da gema base, so garantido quando ha <= 3 variantes (coluna "Garantido"). Modo "nivel 1" usa precos nv1 (vendor = 1c), "20/20" usa gemas ativas 20/20. Inclui precos de baixa confianca (padrao do site).',
+    note: 'Divine Font (Labirinto): converte a gema numa das suas versões transfiguradas, escolhendo entre até 3 opções. Como no poe.how: lucro = variante mais cara - preço da gema base, só garantido quando há <= 3 variantes (coluna "Garantido"). Modo "nível 1" usa preços nv1 (vendor = 1c), "20/20" usa gemas ativas 20/20. Inclui preços de baixa confiança (padrão do site).',
     defaultSort: { key: 'profit', dir: 'desc' },
     columns: [
       { key: 'name', label: 'Gema base', type: 'text' },

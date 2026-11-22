@@ -257,7 +257,7 @@ function listView(cat) {
     <h2>${esc(cat ? catName(cat) : 'Top lucros')}</h2>
     <div id="sum" class="stats"></div>
     <div class="ctl">
-      <label>Buscar <input id="q" type="search" placeholder="Buscar por título..." value="${esc(lf.q)}"></label>
+      <label>Buscar <input id="q" type="search" placeholder="Buscar por título ou item..." value="${esc(lf.q)}"></label>
       <label>Ordenar <select id="sort">${Object.keys(SORTS).map((n) => `<option${n === lf.sort ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
       <label><input type="checkbox" id="pos"${lf.pos ? ' checked' : ''}> Só lucrativas</label>
       <label><input type="checkbox" id="drop"${lf.drop ? ' checked' : ''}> Só confiáveis (com drop e preços)</label>
@@ -275,7 +275,7 @@ function fillList() {
   // lucro de custo desconhecido é só um teto: fica fora de tudo, salvo com o checkbox marcado
   const shown = all.filter((x) => lf.unk || !x.c.costUnknown), hidden = all.length - shown.length;
   const rows = shown
-    .filter((x) => (!q || (x.s.title || '').toLowerCase().includes(q)) && (!lf.pos || x.c.profit > 0) && (!lf.drop || (!x.c.noDropData && !x.c.noPrice)))
+    .filter((x) => (!q || [x.s.title, ...x.s.req.map((l) => l.name), ...x.s.rew.map((l) => l.name)].some((t) => (t || '').toLowerCase().includes(q))) &&(!lf.pos || x.c.profit > 0) && (!lf.drop || (!x.c.noDropData && !x.c.noPrice)))
     .sort(SORTS[lf.sort]);
   const n = shown.length;
   const nPos = shown.filter((x) => x.c.profit > 0).length, share = n ? (nPos / n) * 100 : 0;

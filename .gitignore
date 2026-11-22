@@ -1,6 +1,5 @@
 dist/
 node_modules/
 .claude/
-# hourly caches, rebuilt by the server and by the Pages workflow
+# hourly cache, rebuilt by the server and by the Pages workflow
 data/prices-*.json
-data/extra-*.json

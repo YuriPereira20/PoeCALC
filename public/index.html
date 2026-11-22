@@ -71,7 +71,7 @@
   table{width:100%;border-collapse:separate;border-spacing:0}
   th,td{padding:8px 10px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--line)}
   tbody tr:last-child td{border-bottom:0}
-  th{position:sticky;top:0;z-index:1;background:var(--panel2);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);white-space:nowrap}
+  th{position:sticky;top:0;z-index:1;background:var(--panel2);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
   th[data-k]{cursor:pointer}
   th[data-k]:hover{color:var(--text)}
   th.sorted{color:var(--accent)}
@@ -107,7 +107,11 @@
   .ico.l{width:44px;height:44px}
   .ico.xl{width:64px;height:64px}
   .wi{display:inline-flex;align-items:center;gap:8px;min-width:0}
-  .hd{display:flex;align-items:center;gap:14px;margin:0 0 14px}
+  /* calculator tables: the buttons drop under the name instead of pushing the last columns out of the card */
+  .wi.wrap{flex-wrap:wrap;gap:2px 8px}
+  /* some calculators have too many columns for a laptop screen: scroll sideways (their header stops being sticky) */
+  #xtbl .card{overflow-x:auto}
+  .num small{white-space:normal}  .hd{display:flex;align-items:center;gap:14px;margin:0 0 14px}
   .hd h2{margin:0;min-width:0}
   .pod .ico{float:right;margin:0 0 6px 10px}
   .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;vertical-align:-2px;animation:spin .8s linear infinite}
@@ -295,7 +299,7 @@ function rowHtml({ s, c }, i) {
   if (c.snapshotPrices > 0) av.push(`${c.snapshotPrices} preços antigos`);
   const cls = profitCls(c);
   const mHtml = Number.isFinite(c.margin) && !c.costUnknown ? `<span class="pill${c.margin > 0 ? ' pos' : c.margin < 0 ? ' neg' : ''}">${esc(pct(c.margin))}</span>` : '-';
-  return `<tr><td class="num muted">${i + 1}</td><td><span class="wi">${ico(simg(s, 64))}<a class="name" href="#/s/${encodeURIComponent(s.id)}">${esc(s.title)}</a></span></td><td><span class="chip">${esc(catName(s.category))}</span></td><td class="num">${costHtml(c)}</td><td class="num">${esc(money(c.ev))}</td><td class="num ${cls}">${esc(profitTxt(c))}</td><td class="num">${mHtml}</td><td class="num">${(s.runs || 0).toLocaleString('pt-BR')}<br><small>${esc(s.versions)}</small></td><td class="num">${c.costUnknown || c.runs80 == null ? '-' : c.runs80.toLocaleString('pt-BR')}</td><td>${av.map((w) => `<span class="chip warn">${esc(w)}</span>`).join('')}</td></tr>`;
+  return `<tr><td class="num muted">${i + 1}</td><td><span class="wi">${ico(simg(s, 64))}<a class="name" href="#/s/${encodeURIComponent(s.id)}">${esc(s.title)}</a></span></td><td><span class="chip">${esc(catName(s.category))}</span></td><td class="num">${costHtml(c)}</td><td class="num">${esc(money(c.ev))}</td><td class="num ${cls}">${esc(profitTxt(c))}</td><td class="num">${mHtml}</td><td class="num">${(s.runs || 0).toLocaleString('pt-BR')}<br><small>${esc(String(s.versions ?? '').replaceAll(',', ', '))}</small></td><td class="num">${c.costUnknown || c.runs80 == null ? '-' : c.runs80.toLocaleString('pt-BR')}</td><td>${av.map((w) => `<span class="chip warn">${esc(w)}</span>`).join('')}</td></tr>`;
 }
 
 function detail(id) {
@@ -460,7 +464,7 @@ function renderExtraTable() {
   const lkKey = ['name', 'base'].includes(iconKey) ? iconKey : null;
   const body = shown.map((r) => `<tr>${d.columns.map((c) => {
     const lk = c.key === lkKey ? links(r[c.key], xv.league) : '';
-    return `<td class="${xcls(c, r)}">${c.key === iconKey && (r.icon || lk) ? `<span class="wi">${ico(r.icon)}${xfmt(c, r[c.key])}${lk}</span>` : xfmt(c, r[c.key])}</td>`;
+    return `<td class="${xcls(c, r)}">${c.key === iconKey && (r.icon || lk) ? `<span class="wi">${ico(r.icon)}<span class="wi wrap">${xfmt(c, r[c.key])}${lk}</span></span>` : xfmt(c, r[c.key])}</td>`;
   }).join('')}</tr>`).join('');
   $('#xtbl').innerHTML = `<div class="card"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }

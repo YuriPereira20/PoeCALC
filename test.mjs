@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { calc, preFights, withPre } from './public/calc.js';
+import { summarize, CHAOS, DIVINE } from './extras/_exchange.mjs';
 
 const { strategies } = JSON.parse(await readFile(new URL('./data/strategies.json', import.meta.url), 'utf8'));
 const near = (a, b, what) => assert.ok(Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b)), `${what}: ${a} != ${b}`);
@@ -69,5 +70,32 @@ c = calc(withPre(inv, pool));
 near(c.ev, 15, 'ev do ciclo'); // R 10 + S 10 x 0.5
 near(c.cost, 20, 'custo do ciclo'); // the invitation's own requirements, counted once
 assert.deepEqual(c.rew.map((l) => l.from), ['Inv', 'B1']);
+
+// Currency Exchange summary over two hours: chaos and divine markets, a junk divine trade, another league
+const mk = (league, pair, volume_traded, lowest_ratio, highest_ratio) => ({ league, market_pair: pair, volume_traded, lowest_ratio, highest_ratio });
+const ex = summarize([
+  { markets: [
+    mk('L', [CHAOS, 'X'], { X: 10, [CHAOS]: 100 }, { X: 1, [CHAOS]: 8 }, { X: 1, [CHAOS]: 12 }),
+    mk('L', ['X', DIVINE], { X: 1, [DIVINE]: 50 }, { X: 1, [DIVINE]: 50 }, { X: 1, [DIVINE]: 50 }), // junk: the chaos market has more units
+    mk('L', [CHAOS, DIVINE], { [CHAOS]: 2000, [DIVINE]: 10 }, {}, {}),
+    mk('Standard', [CHAOS, 'Z'], { Z: 5, [CHAOS]: 50 }, { Z: 1, [CHAOS]: 10 }, { Z: 1, [CHAOS]: 10 }),
+  ] },
+  { markets: [
+    mk('L', ['X', CHAOS], { X: 10, [CHAOS]: 120 }, { X: 1, [CHAOS]: 10 }, { X: 1, [CHAOS]: 14 }),
+    mk('L', [CHAOS, DIVINE], { [CHAOS]: 2200, [DIVINE]: 10 }, {}, {}),
+    mk('L', ['Y', DIVINE], { Y: 4, [DIVINE]: 2 }, { Y: 2, [DIVINE]: 1 }, { Y: 2, [DIVINE]: 1 }),
+  ] },
+], 'L');
+assert.equal(ex.divine, 210);
+const X = ex.items.get('X'), Y = ex.items.get('Y');
+assert.equal(X.quote, 'chaos');
+near(X.price, 11, 'preço X'); near(X.lo, 9, 'compra X'); near(X.hi, 13, 'venda X'); near(X.volume, 110, 'volume X');
+assert.equal(X.hours, 2);
+assert.equal(Y.quote, 'divine');
+near(Y.price, 105, 'preço Y'); near(Y.lo, 105, 'compra Y'); near(Y.hi, 105, 'venda Y'); near(Y.volume, 210, 'volume Y');
+assert.equal(Y.hours, 1);
+near(ex.items.get(CHAOS).price, 1, 'preço chaos');
+near(ex.items.get(DIVINE).price, 210, 'preço divine');
+assert.equal(ex.items.has('Z'), false);
 
 console.log(`ok ${strategies.length} estratégias`);

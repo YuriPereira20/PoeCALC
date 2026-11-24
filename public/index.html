@@ -150,7 +150,7 @@
 </aside>
 <main id="main"><p class="muted"><span class="spin"></span> Carregando...</p></main>
 <script type="module">
-import { calc } from './calc.js';
+import { calc, preFights, withPre } from './calc.js';
 
 const STATIC = false; // build.mjs flips this to true in the GitHub Pages copy
 const lgFile = (lg) => lg.replace(/[^a-zA-Z0-9]/g, '_');
@@ -271,7 +271,7 @@ function listView(cat) {
 function fillList() {
   lf = { q: $('#q').value, sort: $('#sort').value, pos: $('#pos').checked, drop: $('#drop').checked, unk: $('#unk').checked };
   const q = lf.q.trim().toLowerCase();
-  const all = D.strategies.filter((s) => !curCat || s.category === curCat).map((s) => ({ s, c: calc(s, D.live, ovOf(s.id), D.counts) }));
+  const all = D.strategies.filter((s) => !curCat || s.category === curCat).map((s) => ({ s, c: calc(withPre(s, D.strategies), D.live, ovOf(s.id), D.counts) }));
   // lucro de custo desconhecido é só um teto: fica fora de tudo, salvo com o checkbox marcado
   const shown = all.filter((x) => lf.unk || !x.c.costUnknown), hidden = all.length - shown.length;
   const rows = shown
@@ -303,11 +303,18 @@ function rowHtml({ s, c }, i) {
 }
 
 function detail(id) {
-  const s = D.strategies.find((x) => String(x.id) === id);
+  const raw = D.strategies.find((x) => String(x.id) === id);
+  // convite: o custo já paga as lutas anteriores, então o loot delas entra junto
+  const s = raw && withPre(raw, D.strategies);
   cur = s ?? null;
   if (!s) { main.innerHTML = '<p>Estratégia não encontrada.</p>'; return; }
   ovCur = ovOf(s.id);
   const c = calc(s, D.live, ovCur, D.counts);
+  const pre = preFights(raw, D.strategies), paid = new Set(pre.flatMap((t) => t.req.map((l) => l.item)));
+  const cyc = !pre.length ? '' : `
+    <h3>Lutas do ciclo</h3>
+    <p class="note">O custo deste convite é o das lutas que a Maven precisa testemunhar antes. O loot delas já está somado no valor esperado e no lucro acima.</p>
+    <div class="card"><table><thead><tr><th>Luta</th><th class="num">Custo</th><th class="num">Valor esperado</th><th class="num">Runs</th></tr></thead><tbody>${pre.map((t) => `<tr><td><a class="name" href="#/s/${encodeURIComponent(t.id)}">${esc(t.title)}</a></td><td class="num">${esc(money(calc(t, D.live, {}, D.counts).cost))}</td><td class="num" data-f="${esc(t.title)}"></td><td class="num">${esc(t.runs)}</td></tr>`).join('')}${c.req.filter((l) => !paid.has(l.item)).map((l) => `<tr><td>${esc(l.name)} <span class="chip warn">sem dados de drop</span></td><td class="num">${unitHtml(l.total)}</td><td class="num">-</td><td class="num">-</td></tr>`).join('')}<tr><td>${esc(s.title)} (o convite)</td><td class="num">-</td><td class="num" data-f="${esc(s.title)}"></td><td class="num">${esc(s.runs)}</td></tr></tbody></table></div>`;
   const order = c.rew.map((_, i) => i).sort((a, b) => c.rew[b].expected - c.rew[a].expected);
   main.innerHTML = `
     <p><a class="chip" href="#/c/${encodeURIComponent(s.category)}">&larr; ${esc(catName(s.category))}</a></p>
@@ -326,13 +333,13 @@ function detail(id) {
       <div class="stat"><span class="lbl">Margem</span><b data-k="margin"></b></div>
       <div class="stat"><span class="lbl">Runs p/ 80%</span><b data-k="runs80"></b></div>
     </div>
-    <p class="note" id="unk"></p>
+    <p class="note" id="unk"></p>${cyc}
     <h3>Composição do valor esperado</h3>
     <div id="comp"></div>
     <h3>Requisitos</h3>
     <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th><th class="num">Total</th><th>Fonte</th></tr></thead><tbody>${s.req.map((l, i) => `<tr data-r="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}${links(l.name, liga)}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.req[i].unit)}</td><td class="num" data-k="total"></td><td data-k="src"></td></tr>`).join('')}</tbody></table></div>
     <h3>Recompensas</h3>
-    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th><th class="num">Anúncios</th><th class="num">Drop %</th><th>Excluir</th><th class="num">Valor esperado</th><th>Grupo</th><th>Fonte</th></tr></thead><tbody>${order.map((i) => { const l = s.rew[i], n = c.rew[i].count; return `<tr data-w="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}${links(l.name, liga)}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.rew[i].unit)}</td><td class="num${n < 10 ? ' warn' : ''}">${n == null ? '-' : n.toLocaleString('pt-BR')}</td><td class="num">${esc(pct(l.rate * 100))}</td><td><input type="checkbox" data-kind="excl" data-idx="${i}"></td><td class="num"><span data-k="expected"></span><div class="bar"><i data-k="bar"></i></div></td><td>${esc(l.group ?? '-')}</td><td data-k="src"></td></tr>`; }).join('')}</tbody></table></div>
+    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th><th class="num">Anúncios</th><th class="num">Drop %</th><th>Excluir</th><th class="num">Valor esperado</th><th>Grupo</th><th>Fonte</th></tr></thead><tbody>${order.map((i) => { const l = s.rew[i], n = c.rew[i].count; return `<tr data-w="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}${links(l.name, liga)}${l.from && l.from !== s.title ? `<span class="chip">${esc(l.from)}</span>` : ''}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.rew[i].unit)}</td><td class="num${n < 10 ? ' warn' : ''}">${n == null ? '-' : n.toLocaleString('pt-BR')}</td><td class="num">${esc(pct(l.rate * 100))}</td><td><input type="checkbox" data-kind="excl" data-idx="${i}"></td><td class="num"><span data-k="expected"></span><div class="bar"><i data-k="bar"></i></div></td><td>${esc(l.group ?? '-')}</td><td data-k="src"></td></tr>`; }).join('')}</tbody></table></div>
     <p><button id="reset">Limpar exclusões</button></p>`;
   updateDetail();
 }
@@ -344,7 +351,7 @@ const srcBadge = (s) => (Object.hasOwn(SRC, s) ? `<span class="chip ${SRC[s][1]}
 function compHtml(rew, tot) {
   if (!(tot > 0)) return '<p class="muted">Sem valor esperado.</p>';
   const parts = rew.filter((l) => !l.excluded && l.expected > 0).sort((a, b) => b.expected - a.expected);
-  const segs = parts.slice(0, 5).map((l, i) => ({ name: l.name, v: l.expected, color: COMP[i] }));
+  const segs = parts.slice(0, 5).map((l, i) => ({ name: l.from && l.from !== cur.title ? `${l.name} (${l.from})` : l.name, v: l.expected, color: COMP[i] }));
   const rest = parts.slice(5).reduce((a, l) => a + l.expected, 0);
   if (rest > 0) segs.push({ name: 'Outros', v: rest, color: '#4a4f5a' });
   const sh = segs.map((g) => ({ ...g, p: (g.v / tot) * 100 }));
@@ -364,6 +371,7 @@ function updateDetail() {
   main.querySelector('#unk').textContent = c.costUnknown ? unk : '';
   const tot = c.rew.reduce((a, l) => a + (l.excluded || !(l.expected > 0) ? 0 : l.expected), 0);
   main.querySelector('#comp').innerHTML = compHtml(c.rew, tot);
+  main.querySelectorAll('td[data-f]').forEach((td) => { td.textContent = money(c.rew.reduce((a, l) => a + (l.from === td.dataset.f ? l.expected : 0), 0)); });
   main.querySelectorAll('tr[data-r]').forEach((tr) => {
     const l = c.req[+tr.dataset.r];
     tr.querySelector('[data-k="total"]').textContent = l.unit > 0 ? money(l.total) : '-';

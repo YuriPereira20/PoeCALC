@@ -1,3 +1,17 @@
+// Fights an invitation pays for: boss strategies whose whole requirement list is part of the invitation's.
+// shortcut: two boss strategies with the same requirements would both count, dedupe by requirement if poe.how ever lists such a pair
+export function preFights(s, all) {
+  if (s.category !== 'invitation') return [];
+  const need = new Map(s.req.map((l) => [l.item, l.amount]));
+  return all.filter((t) => t.category === 'bosses' && t.req.length > 0 && t.req.every((l) => need.get(l.item) === l.amount));
+}
+
+// The invitation and the drops of those fights as one strategy for calc(); `from` names the fight of each reward.
+export function withPre(s, all) {
+  const pre = preFights(s, all);
+  return pre.length ? { ...s, rew: [s, ...pre].flatMap((t) => t.rew.map((l) => ({ ...l, from: t.title }))) } : s;
+}
+
 // Pure calculation (no DOM). Used by the page and by test.mjs.
 // ov = { price: {[item]: chaos}, rate: {[rewardIndex]: 0..1}, excluded: {[rewardIndex]: true} } (all optional)
 export function calc(s, live = {}, ov = {}, counts = {}) {

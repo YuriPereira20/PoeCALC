@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { calc } from './public/calc.js';
+import { calc, preFights, withPre } from './public/calc.js';
 
 const { strategies } = JSON.parse(await readFile(new URL('./data/strategies.json', import.meta.url), 'utf8'));
 const near = (a, b, what) => assert.ok(Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b)), `${what}: ${a} != ${b}`);
@@ -57,5 +57,17 @@ const half = { ...h, rew: [{ item: 'X', name: 'X', amount: 1, price: 10, group: 
 assert.equal(calc(half, {}, {}, { X: 3 }).lowLiq, 1);
 assert.equal(calc(half, {}, {}, { X: 50 }).lowLiq, 0);
 assert.equal(calc(half).lowLiq, 0);
+
+// invitation paid with A + B: boss B1 (needs A) is part of the cycle, B2 (needs C) is not
+const line = (item, rate = 1) => ({ item, name: item, amount: 1, price: 10, cheapest: true, group: null, rate });
+const inv = { id: 'i', title: 'Inv', category: 'invitation', fixed: false, req: [line('A'), line('B')], rew: [line('R')] };
+const b1 = { id: 'b1', title: 'B1', category: 'bosses', fixed: false, req: [line('A')], rew: [line('S', 0.5)] };
+const pool = [inv, b1, { ...b1, id: 'b2', title: 'B2', req: [line('C')] }];
+assert.deepEqual(preFights(inv, pool), [b1]);
+assert.equal(withPre(b1, pool), b1); // a boss has no earlier fights
+c = calc(withPre(inv, pool));
+near(c.ev, 15, 'ev do ciclo'); // R 10 + S 10 x 0.5
+near(c.cost, 20, 'custo do ciclo'); // the invitation's own requirements, counted once
+assert.deepEqual(c.rew.map((l) => l.from), ['Inv', 'B1']);
 
 console.log(`ok ${strategies.length} estratégias`);

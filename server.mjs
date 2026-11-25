@@ -149,16 +149,24 @@ const extra = async (u, res, slug) => {
 // data/history.json (import-history.mjs) is read on first use and then kept in memory
 let pastCache = null;
 const pastHistory = async () => (pastCache ??= JSON.parse(await readFile(join(ROOT, 'data', 'history.json'), 'utf8')));
+// data/hours.json (import-hours.mjs): the first 72 hours of each league; no file means no hours
+let hoursCache = null;
+const hourHistory = async () => (hoursCache ??= await readFile(join(ROOT, 'data', 'hours.json'), 'utf8').then(JSON.parse, (e) => { if (e.code !== 'ENOENT') throw e; return { leagues: {}, items: {} }; }));
 
-// one item: its past leagues, the running league and the forecast; the item page and the calculator read the same numbers
+// one item: its past leagues, the running league, the forecast and the hours; the item page and the calculator read the same numbers
 const itemHistory = async (u, res) => {
   const league = u.searchParams.get('league') || 'Covens', id = u.searchParams.get('id') || '';
   if (!LEAGUES.includes(league)) return json(res, 400, { error: 'Liga inválida' });
   if (!STARTS[league]) return json(res, 400, { error: 'Previsão só para as ligas da temporada' });
   let all;
   try { all = await pastHistory(); } catch (e) { if (e.code !== 'ENOENT') throw e; return json(res, 503, { error: 'Histórico não importado' }); }
-  if (!Object.hasOwn(all.items, id)) return json(res, 404, { error: 'Sem histórico para este item' });
-  const past = all.items[id], series = Object.values(past);
+  const H = await hourHistory();
+  // an item can have hours without daily history (only traded on the Currency Exchange): its daily past is then empty
+  const daily = Object.hasOwn(all.items, id), hourly = Object.hasOwn(H.items, id) ? H.items[id] : null;
+  if (!daily && !hourly) return json(res, 404, { error: 'Sem histórico para este item' });
+  const past = daily ? all.items[id] : {}, series = Object.values(past);
+  // hours of the past leagues only (the running ones are in STARTS); the running league's own hours, for the non-hardcore one
+  const hours = hourly ? { past: Object.fromEntries(Object.entries(hourly).filter(([L]) => !STARTS[L])), cur: league.startsWith('Hardcore') ? null : hourly[league] ?? null } : null;
   const base = await readFile(join(ROOT, 'data', 'strategies.json'), 'utf8').then(JSON.parse, () => ({ strategies: [] }));
   const line = base.strategies.flatMap((s) => [...s.req, ...s.rew]).find((l) => l.item === id);
   const cache = await readFile(join(ROOT, 'data', `prices-${leagueFile(league)}.json`), 'utf8').then(JSON.parse, () => null);
@@ -171,7 +179,7 @@ const itemHistory = async (u, res) => {
   const fc = (d) => (now && day >= 0 ? forecast(series, d, day, now) : forecast(series, d));
   const band = [];
   for (let d = Math.max(day + 1, 0); d < 120; d++) { const f = fc(d); if (f) band.push({ d, lo: f.lo, mid: f.mid, hi: f.hi }); }
-  json(res, 200, { id, name: line?.name ?? id, icon: base.icons?.[id] ?? (BELT_IDS.includes(id) ? BELT_ICON : null), league, day, now, past, cur, band, at: Object.fromEntries([7, 14, 30, 60].map((h) => [h, fc(day + h)])) });
+  json(res, 200, { id, name: line?.name ?? id, icon: base.icons?.[id] ?? (BELT_IDS.includes(id) ? BELT_ICON : null), league, day, now, past, cur, band, at: Object.fromEntries([7, 14, 30, 60].map((h) => [h, fc(day + h)])), hours });
 };
 
 // shortcut: users in one JSON file, fine for dozens of logins; move to a database if it grows

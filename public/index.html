@@ -167,6 +167,16 @@
   .hchart .band{fill:var(--accent-soft)}
   .hchart .now{stroke:var(--muted);stroke-dasharray:3 3}
   .hchart .hov{stroke:var(--text);stroke-opacity:.35}
+  .hchart .pdot{fill:var(--muted);fill-opacity:.7}
+  .hchart .pdot.c{fill:var(--accent)}
+  .seg{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+  .seg button{font-size:13px;padding:5px 11px}
+  .seg button[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+  /* item page tables: wider than a phone, they scroll sideways in their card and the first column stays in view */
+  .wide{overflow-x:auto}
+  .wide th:first-child,.wide td:first-child{position:sticky;left:0;background:var(--panel)}
+  .wide th:first-child{z-index:2;background:#191620}
+  .wide td:first-child{z-index:1}
   .htip{position:absolute;top:6px;z-index:1;pointer-events:none;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:6px 9px;font-size:12px;line-height:1.5;box-shadow:var(--shadow);white-space:nowrap}
 </style>
 </head>
@@ -543,6 +553,7 @@ function xfmt(c, v) {
 
 // #/h/<id>: histórico e previsão de um item (/api/history); o gráfico é desenhado na largura da caixa
 let hist = null, hTok = 0; // resposta aberta e numero da ultima requisicao
+let hRange = 'all';        // periodo do grafico do item ('all', '14', '72h'); fica ao trocar de item
 const BACK = '<p><a class="chip" href="#/x/previsao">&larr; Previsão de preços</a></p>';
 // the +30 forecast in words, the same wording as the calculator's column
 const sinalTxt = (f) => (f.trend === 2 ? `Sobe em todas (${f.n} de ${f.n})` : f.trend === 1 ? `Sobe em quase todas (${f.up} de ${f.n})` : f.trend === -2 ? `Cai em todas (${f.n} de ${f.n})` : f.trend === -1 ? `Cai em quase todas (${f.down} de ${f.n})` : 'Sem padrão');
@@ -565,13 +576,18 @@ async function itemView(id) {
 }
 
 function itemHtml() {
-  const h = hist, past = Object.entries(h.past), f30 = h.at[30], cols = [1, 7, 14, 30, 60, 90];
+  const h = hist, past = Object.entries(h.past), f30 = h.at[30], cols = [1, 2, 3, 4, 5, 6, 7, 10, 14, 21, 30, 45, 60, 90], hcols = [1, 2, 3, 4, 6, 8, 12, 18, 24, 36, 48, 72];
   const sg = (x) => `${x > 0 ? '+' : ''}${pct(x)}`;
   const card = (lbl, f) => `<div class="stat"><span class="lbl">${lbl}</span><b>${esc(f ? money(f.mid) : '-')}</b><small>${esc(f ? [h.now > 0 ? sg(100 * (f.mid / h.now - 1)) : '', `${money(f.lo)} a ${money(f.hi)}`].filter(Boolean).join(' · ') : '-')}</small></div>`;
   // prices by day index (chaos) for the table
   const curAt = [], fcMid = [];
   for (const [d, p] of h.cur) curAt[d] = p;
   for (const b of h.band) fcMid[b.d] = b.mid;
+  // days 1 to 7 are that day only; later days take the nearest price within 2 days, as the forecast does
+  const dayAt = (s, n) => (n <= 7 ? (s?.[n - 1] > 0 ? s[n - 1] : null) : nearAt(s, n - 1));
+  const hr = h.hours, hrRows = hr ? [...Object.entries(hr.past), ...(hr.cur ? [[`${liga} (atual)`, hr.cur]] : [])] : [];
+  if (!hr && hRange === '72h') hRange = 'all';
+  const rng = (r, lbl) => `<button data-r="${r}" aria-pressed="${hRange === r}">${lbl}</button>`;
   main.innerHTML = `
     ${BACK}
     <div class="hd">${ico(h.icon, 'xl')}<h2>${esc(h.name)}</h2></div>
@@ -583,72 +599,86 @@ function itemHtml() {
     <p>${esc(f30 ? `${sinalTxt(f30)} (subiu em ${f30.up}, caiu em ${f30.down} de ${f30.n} ligas)` : 'Sem previsão para +30 dias.')}</p>
     <h3>Histórico e previsão</h3>
     <div class="card" style="padding:12px 14px">
-      <div class="legend">
-        <span><span class="dot" style="background:var(--muted);opacity:.55"></span>Ligas passadas (${past.length})</span>
-        <span><span class="dot" style="background:var(--accent)"></span>${esc(liga)} (liga atual)</span>
-        <span><span class="dot" style="background:none;width:14px;height:0;border-top:2px dashed var(--accent);border-radius:0"></span>Previsão</span>
-        <span><span class="dot" style="background:var(--accent-soft);border:1px solid var(--accent);border-radius:2px"></span>Faixa das ligas passadas</span>
-      </div>
+      <div class="seg" id="hrng" role="group" aria-label="Período do gráfico">${rng('all', 'Liga inteira')}${rng('14', 'Primeiros 14 dias')}${hr ? rng('72h', 'Primeiras 72 horas') : ''}</div>
+      <div class="legend" id="hleg"></div>
       <div id="hchart" style="position:relative;margin-top:8px"></div>
     </div>
     <h3>Preços por dia de liga</h3>
-    <div class="card"><table><thead><tr><th>Liga</th>${cols.map((n) => `<th class="num">Dia ${n}</th>`).join('')}</tr></thead><tbody>${[...past, [`${liga} (atual)`, curAt], ['Previsão', fcMid]].map(([name, s]) => `<tr><td>${esc(name)}</td>${cols.map((n) => `<td class="num">${esc(money(nearAt(s, n - 1)))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-  drawHist();
+    <div class="card wide"><table><thead><tr><th>Liga</th>${cols.map((n) => `<th class="num">Dia ${n}</th>`).join('')}</tr></thead><tbody>${[...past, [`${liga} (atual)`, curAt], ['Previsão', fcMid]].map(([name, s]) => `<tr><td>${esc(name)}</td>${cols.map((n) => `<td class="num">${esc(money(dayAt(s, n)))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${hr ? `
+    <h3>Primeiras horas (bolsa oficial)</h3>
+    <div class="card wide"><table><thead><tr><th>Liga</th>${hcols.map((n) => `<th class="num">Hora ${n}</th>`).join('')}</tr></thead><tbody>${hrRows.map(([name, s]) => `<tr><td>${esc(name)}</td>${hcols.map((n) => `<td class="num">${esc(money(s[n - 1] > 0 ? s[n - 1] : null))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}`;
+  drawHist(hRange);
 }
 
-// one SVG for the chart: log scale in chaos (divine when the page is in divine), x = league day 1..120
-function drawHist() {
+// one SVG for the chart, log scale in chaos (divine when the page is in divine). range: 'all' = league days 1-120,
+// '14' = days 1-14, '72h' = the first 72 hours (hourly data only: no forecast and no "hoje")
+function drawHist(range = 'all') {
   const box = $('#hchart');
   if (!box || !hist) return;
   const h = hist, dv = D?.live?.['divine-orb'], k = moeda === 'div' && dv > 0 ? 1 / dv : 1, unit = k === 1 ? 'chaos' : 'divine';
+  const hourly = range === '72h', N = hourly ? 72 : range === '14' ? 14 : 120;
   const W = box.clientWidth || 640, H = 320, L = 56, R = 12, T = 22, B = 36, PW = W - L - R, PH = H - T - B;
-  const X = (d) => L + (d / 119) * PW;
+  const X = (i) => L + (i / (N - 1)) * PW;
   const C = (v) => v * k;
-  const past = Object.entries(h.past);
+  // the series in range as [index, price]; the index is the day or hour minus 1
+  const pts = (s) => s.slice(0, N).flatMap((v, i) => (v > 0 ? [[i, C(v)]] : []));
+  const past = Object.entries(hourly ? h.hours?.past ?? {} : h.past);
+  const curS = hourly ? h.hours?.cur ?? [] : [];
+  if (!hourly) for (const [d, p] of h.cur) curS[d] = p;
   // the forecast band starts at today's price
-  const fan = [...(h.now > 0 && h.day >= 0 ? [{ d: h.day, lo: h.now, mid: h.now, hi: h.now }] : []), ...h.band];
-  const vals = [...past.flatMap(([, s]) => s), ...h.cur.map(([, p]) => p), ...fan.flatMap((b) => [b.lo, b.hi])].filter((v) => v > 0).map(C);
-  if (!vals.length) { box.innerHTML = '<p class="muted">Sem preços para desenhar.</p>'; return; }
+  const fan = hourly ? [] : [...(h.now > 0 && h.day >= 0 ? [{ d: h.day, lo: h.now, mid: h.now, hi: h.now }] : []), ...h.band].filter((b) => b.d < N);
+  const vals = [...past.flatMap(([, s]) => s.slice(0, N)), ...curS.slice(0, N), ...fan.flatMap((b) => [b.lo, b.hi])].filter((v) => v > 0).map(C);
+  if (!vals.length) { box.innerHTML = '<p class="muted">Sem preços para desenhar.</p>'; $('#hleg').innerHTML = ''; return; }
   const mn = Math.min(...vals), mx = Math.max(...vals), lo = mn, hi = mx > mn ? mx : mn * 2;
   const Y = (v) => T + PH - (Math.log(v / lo) / Math.log(hi / lo)) * PH;
-  // a path through the points, a gap wherever a day is missing
-  const line = (pts) => pts.map(([d, v], i) => `${i && pts[i - 1][0] === d - 1 ? 'L' : 'M'}${X(d).toFixed(1)} ${Y(v).toFixed(1)}`).join('');
+  // a path through the points, a gap wherever a day or hour is missing
+  const line = (ps) => ps.map(([i, v], j) => `${j && ps[j - 1][0] === i - 1 ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join('');
+  // a point with no neighbour has no line to draw, so it gets a dot
+  const dots = (s, cls) => s.slice(0, N).flatMap((v, i, a) => (v > 0 && !(a[i - 1] > 0) && !(a[i + 1] > 0) ? [`<circle class="${cls}" cx="${X(i)}" cy="${Y(C(v))}" r="2"/>`] : [])).join('');
   const ticks = [];
   for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++) for (const m of [1, 2, 5]) if (m * 10 ** e >= lo && m * 10 ** e <= hi) ticks.push(m * 10 ** e);
   const cf = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 2 });
   const grid = ticks.map((t) => `<line class="g" x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}"/><text class="ax" x="${L - 6}" y="${Y(t) + 4}" text-anchor="end">${cf.format(t)}</text>`).join('');
-  const xs = [1, 30, 60, 90, 120].map((n) => `<line class="g" x1="${X(n - 1)}" x2="${X(n - 1)}" y1="${T}" y2="${T + PH}"/><text class="ax" x="${X(n - 1)}" y="${T + PH + 16}" text-anchor="${n === 1 ? 'start' : n === 120 ? 'end' : 'middle'}">${n}</text>`).join('');
-  const pastSvg = past.map(([, s]) => `<path class="past" d="${line(s.map((v, d) => [d, C(v)]).filter(([, v]) => v > 0))}"/>`).join('');
+  // labels: days 1, 30, 60, 90, 120; every day of the 14; hours 1, then 6, 12 ... 72
+  const marks = range === '14' ? [...Array(14).keys()] : hourly ? [0, ...Array.from({ length: 12 }, (_, j) => 6 * j + 5)] : [0, 29, 59, 89, 119];
+  const xs = marks.map((i) => `<line class="g" x1="${X(i)}" x2="${X(i)}" y1="${T}" y2="${T + PH}"/><text class="ax" x="${X(i)}" y="${T + PH + 16}" text-anchor="${i ? 'middle' : 'start'}">${i + 1}</text>`).join('');
+  const pastSvg = past.map(([, s]) => `<path class="past" d="${line(pts(s))}"/>${dots(s, 'pdot')}`).join('');
   const band = fan.length > 1 ? `<polygon class="band" points="${[...fan.map((b) => `${X(b.d)},${Y(C(b.hi))}`), ...fan.map((b) => `${X(b.d)},${Y(C(b.lo))}`).reverse()].join(' ')}"/>` : '';
   const mid = fan.length ? `<path class="fc" d="${line(fan.map((b) => [b.d, C(b.mid)]))}"/>` : '';
-  const last = h.cur.at(-1);
-  const curSvg = last ? `<path class="cur" d="${line(h.cur.map(([d, p]) => [d, C(p)]))}"/><circle class="hdot" cx="${X(last[0])}" cy="${Y(C(last[1]))}" r="4"/>` : '';
-  const todaySvg = h.day >= 0 && h.day < 120 ? `<line class="now" x1="${X(h.day)}" x2="${X(h.day)}" y1="${T}" y2="${T + PH}"/><text class="ax" x="${X(h.day) + 4}" y="${T + 13}">hoje</text>` : '';
-  box.innerHTML = `<svg class="hchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`Preço de ${h.name} por dia de liga: ligas passadas, liga atual e previsão`)}">${grid}${xs}<line class="g" x1="${L}" x2="${W - R}" y1="${T + PH}" y2="${T + PH}"/>${pastSvg}${band}${mid}${curSvg}${todaySvg}<text class="ax" x="4" y="13">Preço em ${unit}, escala log</text><text class="ax" x="${L + PW / 2}" y="${H - 6}" text-anchor="middle">Dia da liga</text><line id="hx" class="hov" x1="0" x2="0" y1="${T}" y2="${T + PH}" style="visibility:hidden"/><rect x="${L}" y="${T}" width="${PW}" height="${PH}" fill="transparent"/></svg><div class="htip" hidden></div>`;
+  const curPts = pts(curS), last = curPts.at(-1);
+  const curSvg = last ? `<path class="cur" d="${line(curPts)}"/><circle class="hdot" cx="${X(last[0])}" cy="${Y(last[1])}" r="4"/>${dots(curS, 'pdot c')}` : '';
+  const todaySvg = !hourly && h.day >= 0 && h.day < N ? `<line class="now" x1="${X(h.day)}" x2="${X(h.day)}" y1="${T}" y2="${T + PH}"/><text class="ax" x="${X(h.day) + 4}" y="${T + 13}">hoje</text>` : '';
+  const legend = [`<span><span class="dot" style="background:var(--muted);opacity:.55"></span>Ligas passadas (${past.length})</span>`];
+  if (curPts.length) legend.push(`<span><span class="dot" style="background:var(--accent)"></span>${esc(liga)} (liga atual)</span>`);
+  if (fan.length > 1) legend.push('<span><span class="dot" style="background:none;width:14px;height:0;border-top:2px dashed var(--accent);border-radius:0"></span>Previsão</span>', '<span><span class="dot" style="background:var(--accent-soft);border:1px solid var(--accent);border-radius:2px"></span>Faixa das ligas passadas</span>');
+  $('#hleg').innerHTML = legend.join('');
+  const what = hourly ? 'nas primeiras 72 horas' : range === '14' ? 'nos primeiros 14 dias' : 'por dia de liga';
+  box.innerHTML = `<svg class="hchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`Preço de ${h.name} ${what}: ligas passadas, liga atual${hourly ? '' : ' e previsão'}`)}">${grid}${xs}<line class="g" x1="${L}" x2="${W - R}" y1="${T + PH}" y2="${T + PH}"/>${pastSvg}${band}${mid}${curSvg}${todaySvg}<text class="ax" x="4" y="13">Preço em ${unit}, escala log</text><text class="ax" x="${L + PW / 2}" y="${H - 6}" text-anchor="middle">${hourly ? 'Horas desde a abertura da liga' : 'Dia da liga'}</text><line id="hx" class="hov" x1="0" x2="0" y1="${T}" y2="${T + PH}" style="visibility:hidden"/><rect x="${L}" y="${T}" width="${PW}" height="${PH}" fill="transparent"/></svg><div class="htip" hidden></div>`;
   const svg = box.querySelector('svg'), tip = box.querySelector('.htip'), cross = box.querySelector('#hx');
-  const curAt = [], fcBy = [];
-  for (const [d, p] of h.cur) curAt[d] = p;
+  const fcBy = [];
   for (const b of h.band) fcBy[b.d] = b;
   const show = (e) => {
     const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) * (W / r.width);
-    const d = Math.min(119, Math.max(0, Math.round(((x - L) / PW) * 119)));
-    const lines = [`<b>Dia ${d + 1}</b>`];
-    const c = nearAt(curAt, d);
+    const i = Math.min(N - 1, Math.max(0, Math.round(((x - L) / PW) * (N - 1))));
+    const lines = [`<b>${hourly ? `Hora ${i + 1}` : `Dia ${i + 1}`}</b>`];
+    // an hour is exact (the next one is another price); a day takes the nearest one within 2 days, as the table does
+    const at = (s) => (hourly ? (s[i] > 0 ? s[i] : null) : nearAt(s, i));
+    const c = at(curS);
     if (c) lines.push(`${esc(liga)} (atual): ${esc(money(c))}`);
-    const f = fcBy[d];
+    const f = hourly ? null : fcBy[i];
     if (f) lines.push(`Previsão: ${esc(money(f.mid))} (${esc(money(f.lo))} a ${esc(money(f.hi))})`);
-    for (const [name, s] of past) { const v = nearAt(s, d); if (v) lines.push(`${esc(name)}: ${esc(money(v))}`); }
-    cross.setAttribute('x1', X(d)); cross.setAttribute('x2', X(d)); cross.style.visibility = 'visible';
+    for (const [name, s] of past) { const v = at(s); if (v) lines.push(`${esc(name)}: ${esc(money(v))}`); }
+    cross.setAttribute('x1', X(i)); cross.setAttribute('x2', X(i)); cross.style.visibility = 'visible';
     tip.innerHTML = lines.join('<br>');
     tip.hidden = false;
-    const tw = tip.offsetWidth, left = X(d) + 12 + tw > W ? X(d) - 12 - tw : X(d) + 12;
+    const tw = tip.offsetWidth, left = X(i) + 12 + tw > W ? X(i) - 12 - tw : X(i) + 12;
     tip.style.left = `${Math.max(0, left)}px`;
   };
   svg.addEventListener('pointermove', show);
   svg.addEventListener('pointerdown', show);
   svg.addEventListener('pointerleave', () => { tip.hidden = true; cross.style.visibility = 'hidden'; });
 }
-window.addEventListener('resize', drawHist);
+window.addEventListener('resize', () => drawHist(hRange));
 
 // #/admin: logins; the server answers 403 to anyone who is not an admin
 async function adminView() {
@@ -706,6 +736,8 @@ function onEdit(e) {
 function onClick(e) {
   if (e.target.id === 'reset' && cur) { store.del('ov:' + cur.id); detail(String(cur.id)); }
   if (e.target.dataset.del) admDelete(e.target.dataset.del);
+  const rb = e.target.closest('#hrng button');
+  if (rb && hist) { hRange = rb.dataset.r; itemHtml(); }
 }
 
 function onSubmit(e) {

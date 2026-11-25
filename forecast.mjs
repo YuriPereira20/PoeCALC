@@ -8,7 +8,7 @@ export const STARTS = { Covens: '2026-11-13', 'Hardcore Covens': '2026-11-13' };
 // day index (0 = first day) of a date in a league, null for leagues without a start date (the permanent ones)
 export const dayOf = (league, date = new Date()) => (STARTS[league] ? Math.floor((date - Date.parse(STARTS[league])) / 864e5) : null);
 
-const W = 0.5; // share of the past leagues' typical move that is applied: 1 lost to "no change" in the backtest, 0.5 won
+export const W = 0.5; // share of the past leagues' typical move that is applied: 1 lost to "no change" in the backtest, 0.5 won
 const FLAT = 0.05; // a move under 5% counts as neither up nor down
 
 // value of a series on day index d (0 = first day of the league), or the nearest one up to 2 days away
@@ -27,6 +27,10 @@ export const smooth = (s, d) => {
   return xs.length ? xs.sort((a, b) => a - b)[xs.length >> 1] : null;
 };
 
+// the price on exactly that index, no neighbours: for the first days and hours of a league, where 2 days either
+// side is most of the story
+export const exact = (s, i) => (typeof s?.[i] === 'number' && s[i] > 0 ? s[i] : null);
+
 // linear interpolation between sorted values
 const quantile = (xs, q) => {
   const p = q * (xs.length - 1), i = Math.floor(p), j = Math.min(i + 1, xs.length - 1);
@@ -40,13 +44,14 @@ const quantile = (xs, q) => {
 // trend = 2 or -2 when every league moved the same way (4 leagues or more, median move over 15%), 1 or -1 when all
 // but one did, 0 otherwise.
 // Without anchor/price (league not started, item without a price) it is the plain spread of the past prices on that day.
-export function forecast(past, day, anchor = null, price = null) {
+// pick reads one series at one index: `smooth` by default, `exact` for day-by-day or hour-by-hour views.
+export function forecast(past, day, anchor = null, price = null, pick = smooth) {
   if (anchor == null || !(price > 0)) {
-    const xs = past.map((s) => smooth(s, day)).filter((x) => x != null).sort((a, b) => a - b);
+    const xs = past.map((s) => pick(s, day)).filter((x) => x != null).sort((a, b) => a - b);
     return xs.length < 3 ? null : { lo: quantile(xs, 0.25), mid: quantile(xs, 0.5), hi: quantile(xs, 0.75), n: xs.length, up: 0, down: 0, trend: 0 };
   }
   const rs = past.map((s) => {
-    const a = smooth(s, anchor), v = smooth(s, day);
+    const a = pick(s, anchor), v = pick(s, day);
     return a && v ? Math.log(v / a) : null;
   }).filter((x) => x != null).sort((a, b) => a - b);
   if (rs.length < 3) return null;
@@ -56,6 +61,9 @@ export function forecast(past, day, anchor = null, price = null) {
   const to = (q) => price * Math.exp(W * quantile(rs, q));
   return { lo: to(0.25), mid: to(0.5), hi: to(0.75), n, up, down, trend };
 }
+
+// a forecast's trend in words: the calculators and the item page use the same wording
+export const sinal = ({ trend, n, up, down }) => (trend === 2 ? `Sobe em todas (${n} de ${n})` : trend === 1 ? `Sobe em quase todas (${up} de ${n})` : trend === -2 ? `Cai em todas (${n} de ${n})` : trend === -1 ? `Cai em quase todas (${down} de ${n})` : 'Sem padrão');
 
 // leave-one-out check: each past league in turn plays the running league, predicted from the others
 // items: object id -> { League: series }. Errors are the median of |predicted / actual - 1|.

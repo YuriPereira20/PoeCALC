@@ -2,15 +2,13 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BELT_IDS, BELT_ICON } from '../custom.mjs';
-import { backtest, dayOf, forecast } from '../forecast.mjs';
+import { backtest, dayOf, forecast, sinal } from '../forecast.mjs';
 
 export const title = 'Previsão de preços';
 export const order = 0;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pct = (x) => (x == null ? '-' : `${Math.round(100 * x)}%`);
-// the +30 forecast's trend in words (the item page uses the same wording)
-const sinal = ({ trend, n, up, down }) => (trend === 2 ? `Sobe em todas (${n} de ${n})` : trend === 1 ? `Sobe em quase todas (${up} de ${n})` : trend === -2 ? `Cai em todas (${n} de ${n})` : trend === -1 ? `Cai em quase todas (${down} de ${n})` : 'Sem padrão');
 
 export async function load(league) {
   const day = dayOf(league);

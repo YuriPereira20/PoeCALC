@@ -3,8 +3,10 @@ import { readFile } from 'node:fs/promises';
 import { calc, preFights, withPre } from './public/calc.js';
 import { summarize, CHAOS, DIVINE } from './extras/_exchange.mjs';
 import { belt, UNID, BELT_IDS } from './custom.mjs';
-import { at, smooth, dayOf, forecast, backtest } from './forecast.mjs';
+import { at, smooth, exact, dayOf, forecast, backtest, sinal } from './forecast.mjs';
 import { slug, candidateIds } from './import-history.mjs';
+import { hourPrices } from './import-hours.mjs';
+import { move17 } from './extras/inicio-liga.mjs';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -256,5 +258,29 @@ assert.equal(slug("The Wolven King's Bite"), 'the-wolven-kings-bite');
 assert.equal(candidateIds({ name: 'The Stormheart', base: 'Royal Staff', variant: '', links: '6 links' })[0], 'the-stormheart-royal-staff-6l');
 assert.ok(candidateIds({ name: 'Screams of the Desiccated', base: 'Leather Belt', variant: 'Impenetrable, Resonating', links: '' }).includes('screams-of-the-desiccated-impenetrable-resonating'));
 assert.ok(candidateIds({ name: 'Hall of Grandmasters', base: 'Map (Tier 6)', variant: '', links: '' }).includes('hall-of-grandmasters-t6'));
+
+// exact: the league's own day only, no neighbours (smooth would read 1 from the spiky days below)
+assert.equal(exact([0, 5, 7], 1), 5); assert.equal(exact([0, 5], 0), null); assert.equal(exact([null, 5], 0), null); assert.equal(exact([5], 3), null);
+const spiky = [[1, 1, 10, 1, 1], [1, 1, 20, 1, 1], [1, 1, 30, 1, 1]];
+near(forecast(spiky, 2, null, null, exact).mid, 20, 'mid exato sem ancora');
+assert.equal(forecast(spiky, 2).mid, 1);
+// every league halves from day 2 to day 7 (the odd day-1 price is not the base): -50%, all 4 agree (trend -2)
+const halved7 = Array.from({ length: 4 }, () => [999, 10, 10, 10, 10, 10, 5]);
+const mv = move17(halved7);
+near(mv.chg, -50, 'variação do dia 2 ao 7'); assert.equal(mv.sinal, 'Cai em todas (4 de 4)');
+assert.deepEqual(move17([]), { chg: null, sinal: 'Sem padrão' });
+// the trend in words, shared by the calculators and the item page
+assert.equal(sinal({ trend: 2, n: 4, up: 4, down: 0 }), 'Sobe em todas (4 de 4)');
+assert.equal(sinal({ trend: 1, n: 4, up: 3, down: 1 }), 'Sobe em quase todas (3 de 4)');
+assert.equal(sinal({ trend: 0, n: 4, up: 2, down: 2 }), 'Sem padrão');
+assert.equal(sinal({ trend: -1, n: 4, up: 1, down: 3 }), 'Cai em quase todas (3 de 4)');
+assert.equal(sinal({ trend: -2, n: 4, up: 0, down: 4 }), 'Cai em todas (4 de 4)');
+// import-hours.mjs: an hour's markets to the tracked ids in chaos, 3 significant digits; other leagues and untracked items out
+const hourMarkets = [
+  mk('L', [CHAOS, 'X'], { X: 10, [CHAOS]: 1234.5 }, { X: 1, [CHAOS]: 1234 }, { X: 1, [CHAOS]: 1235 }), // 1234.5 / 10 = 123.45
+  mk('Z', [CHAOS, 'X'], { X: 10, [CHAOS]: 5000 }, { X: 1, [CHAOS]: 4999 }, { X: 1, [CHAOS]: 5001 }),
+  mk('L', [CHAOS, 'Y'], { Y: 1, [CHAOS]: 50 }, { Y: 1, [CHAOS]: 50 }, { Y: 1, [CHAOS]: 50 }),
+];
+assert.deepEqual([...hourPrices(hourMarkets, 'L', { X: { name: 'Thing' }, Y: { name: 'Other' } }, new Set(['thing']))], [['thing', 123]]);
 
 console.log(`ok ${strategies.length} estratégias`);

@@ -3,6 +3,7 @@ import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fetchLivePrices } from './prices.mjs';
+import { belt, UNID, BELT_IDS, BELT_ICON } from './custom.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3210;
@@ -32,7 +33,7 @@ const api = async (u, res) => {
   try { cache = JSON.parse(await readFile(file, 'utf8')); } catch {}
   const fresh = cache && u.searchParams.get('refresh') !== '1' && Date.now() - Date.parse(cache.at) < HOUR;
   if (!fresh) {
-    const wanted = new Set(base.strategies.flatMap((s) => [...s.req, ...s.rew].map((l) => l.item)));
+    const wanted = new Set([...BELT_IDS, ...base.strategies.flatMap((s) => [...s.req, ...s.rew].map((l) => l.item))]);
     const { prices, counts } = await fetchLivePrices(league, wanted).catch(() => ({ prices: {}, counts: {} }));
     // empty result = every request failed: keep the old cache if there is one
     if (Object.keys(prices).length) {
@@ -41,15 +42,19 @@ const api = async (u, res) => {
     }
   }
 
+  const live = { ...(cache?.prices ?? {}) }, counts = cache?.counts ?? {};
+  const b = belt(base.strategies, live, counts);
+  // no price source lists the unidentified belt, so it is worth the average roll
+  if (b.ev > 0) live[UNID] ??= b.ev;
   json(res, 200, {
     syncedAt: base.syncedAt,
     league,
     pricesAt: cache?.at ?? null,
-    categories: base.categories,
-    strategies: base.strategies,
-    icons: base.icons ?? {},
-    live: cache?.prices ?? {},
-    counts: cache?.counts ?? {},
+    categories: b.strategy ? base.categories.map((c) => (c.slug === b.strategy.category ? { ...c, count: c.count + 1 } : c)) : base.categories,
+    strategies: b.strategy ? [...base.strategies, b.strategy] : base.strategies,
+    icons: { ...Object.fromEntries([UNID, ...BELT_IDS].map((id) => [id, BELT_ICON])), ...(base.icons ?? {}) },
+    live,
+    counts,
   });
 };
 

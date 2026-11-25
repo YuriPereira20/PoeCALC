@@ -1,6 +1,6 @@
 const UA = { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36' };
 const EXCHANGE = ['Currency', 'Fragment', 'DivinationCard', 'Essence', 'DeliriumOrb', 'Tattoo', 'Runegraft', 'AllflameEmber', 'Astrolabe', 'Oil', 'Fossil', 'Omen', 'Artifact', 'Resonator', 'Scarab'];
-const STASH = ['Invitation', 'Beast', 'Map', 'UniqueMap', 'BlightedMap', 'UniqueWeapon', 'UniqueArmour', 'UniqueAccessory', 'UniqueFlask', 'UniqueJewel', 'UniqueRelic', 'SkillGem', 'ClusterJewel', 'Wombgift', 'Vial'];
+const STASH = ['Invitation', 'Beast', 'Map', 'UniqueMap', 'BlightedMap', 'UniqueWeapon', 'UniqueArmour', 'UniqueAccessory', 'UniqueFlask', 'UniqueJewel', 'UniqueRelic', 'SkillGem', 'ClusterJewel', 'Wombgift', 'Vial', 'ShrineBelt'];
 const WATCH = ['corpses', 'jewel', 'currency', 'flask', 'accessory', 'map', 'deepwater'];
 
 // shortcut: requests run one by one with a 10s timeout, so a hung network can take minutes; upgrade to parallel fetch if that hurts

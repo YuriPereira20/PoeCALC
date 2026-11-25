@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { calc, preFights, withPre } from './public/calc.js';
 import { summarize, CHAOS, DIVINE } from './extras/_exchange.mjs';
+import { belt, UNID, BELT_IDS } from './custom.mjs';
 
 const { strategies } = JSON.parse(await readFile(new URL('./data/strategies.json', import.meta.url), 'utf8'));
 const near = (a, b, what) => assert.ok(Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b)), `${what}: ${a} != ${b}`);
@@ -97,5 +98,30 @@ assert.equal(Y.hours, 1);
 near(ex.items.get(CHAOS).price, 1, 'preço chaos');
 near(ex.items.get(DIVINE).price, 210, 'preço divine');
 assert.equal(ex.items.has('Z'), false);
+
+// Screams of the Desiccated: a shrine roll's share of the priced listings is its drop chance
+assert.equal(BELT_IDS.length, 49);
+for (const id of ['screams-of-the-desiccated-diamond', 'screams-of-the-desiccated-echoing-replenishing', 'screams-of-the-desiccated-greater-skeletal-resistance', 'screams-of-the-desiccated-impenetrable-resonating']) assert.ok(BELT_IDS.includes(id), id);
+const boss = [{ category: 'bosses', title: 'Boss', versions: '3.30', req: [{ item: 'key', name: 'Key', amount: 1, price: 10, conf: 'high', cheapest: true }], rew: [{ item: UNID, rate: 0.5 }] }];
+const shrinePrices = { 'screams-of-the-desiccated-diamond': 1000, 'screams-of-the-desiccated-brutal': 40, 'screams-of-the-desiccated-gloom': 0, 'screams-of-the-desiccated-echoing-replenishing': 900000 };
+const shrineCounts = { 'screams-of-the-desiccated-diamond': 10, 'screams-of-the-desiccated-brutal': 30, 'screams-of-the-desiccated-gloom': 50, 'screams-of-the-desiccated-massive': 90, 'screams-of-the-desiccated-echoing-replenishing': 9 };
+const bl = belt(boss, shrinePrices, shrineCounts);
+assert.equal(bl.ev, 280); // 0.25 x 1000 + 0.75 x 40; unpriced gloom and massive and the 9-listing roll do not count
+assert.equal(bl.strategy.runs, 40);
+assert.equal(bl.strategy.rew.length, 2);
+assert.match(bl.strategy.note, /1 variantes com menos de 10/);
+assert.equal(bl.strategy.req[0].amount, 2); // 1 entry / 0.5 drop chance
+assert.equal(bl.strategy.category, 'gamble');
+const dia = bl.strategy.rew.find((l) => l.item === 'screams-of-the-desiccated-diamond');
+assert.equal(dia.from, 'Diamond');
+assert.equal(dia.rate, 0.25);
+assert.equal(bl.strategy.rew[0].from, 'Brutal');
+const two = belt(boss, shrinePrices, { ...shrineCounts, 'screams-of-the-desiccated-echoing-replenishing': 10 }).strategy.rew.at(-1);
+assert.equal(two.from, 'Echoing + Replenishing');
+assert.equal(two.rate, 0.2);
+assert.equal(belt([], shrinePrices, shrineCounts).ev, 280);
+assert.equal(belt([], shrinePrices, shrineCounts).strategy, null);
+assert.equal(belt(boss, {}, {}).ev, 0);
+assert.equal(belt(boss, {}, {}).strategy, null);
 
 console.log(`ok ${strategies.length} estratégias`);

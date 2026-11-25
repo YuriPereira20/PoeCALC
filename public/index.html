@@ -347,8 +347,8 @@ function detail(id) {
       <span class="chip">Categoria: ${esc(catName(s.category))}</span>
       <span class="chip">Versões: ${esc(s.versions) || '-'}</span>
       <span class="chip">Runs: ${esc(s.runs)}</span>
-      <span class="chip">Contribuidores: ${esc(s.contributors)}</span>
-      <a class="chip" href="https://poe.how/economy/${encodeURIComponent(s.category)}/${encodeURIComponent(String(s.slug).toLowerCase().replace(/[^a-z0-9]+/g, '-'))}" target="_blank" rel="noopener">poe.how ↗</a>
+      ${s.custom ? '' : `<span class="chip">Contribuidores: ${esc(s.contributors)}</span>
+      <a class="chip" href="https://poe.how/economy/${encodeURIComponent(s.category)}/${encodeURIComponent(String(s.slug).toLowerCase().replace(/[^a-z0-9]+/g, '-'))}" target="_blank" rel="noopener">poe.how ↗</a>`}
     </div>
     <div class="stats">
       <div class="stat"><span class="lbl">Custo</span><b data-k="cost"></b></div>
@@ -357,7 +357,7 @@ function detail(id) {
       <div class="stat"><span class="lbl">Margem</span><b data-k="margin"></b></div>
       <div class="stat"><span class="lbl">Runs p/ 80%</span><b data-k="runs80"></b></div>
     </div>
-    <p class="note" id="unk"></p>${cyc}
+    <p class="note" id="unk"></p>${s.note ? `<p class="note">${esc(s.note)}</p>` : ''}${cyc}
     <h3>Composição do valor esperado</h3>
     <div id="comp"></div>
     <h3>Requisitos</h3>

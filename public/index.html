@@ -52,6 +52,9 @@
   aside label select{display:block;width:100%;margin-top:4px;font-size:14px;letter-spacing:0;text-transform:none;color:var(--text)}
   #atualizar{width:100%}
   #info{margin:10px 0 0;font-size:12px}
+  .conta{display:flex;align-items:center;gap:8px;margin:10px 0 0;font-size:12px}
+  .who{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+  .conta button{padding:3px 9px;font-size:12px}
   input:not([type=checkbox]),select,button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font:inherit;transition:border-color .15s,filter .15s}
   input:not([type=checkbox]):hover,select:hover,button:hover{border-color:var(--line2)}
   input[type=checkbox]{accent-color:var(--accent)}
@@ -144,7 +147,7 @@
     /* sidebar compacta: Liga e Moeda lado a lado, navs em faixas de chips (senao o conteudo fica abaixo da dobra) */
     .side-ctl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px}
     .side-ctl label{margin:0}
-    #atualizar,#info{grid-column:1/-1}
+    #atualizar,#info,.conta{grid-column:1/-1}
     #info{margin:0}
     aside h4{margin:12px 10px 4px}
     nav{overflow-x:auto;white-space:nowrap}
@@ -153,6 +156,18 @@
     .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
     .podio{grid-template-columns:minmax(0,1fr)}
   }
+  /* item page (#/h/<id>): the chart is drawn at the width of its box, so its text keeps the same size on a phone */
+  .hchart{display:block;width:100%;height:auto;overflow:visible;touch-action:pan-y}
+  .hchart .g{stroke:var(--line)}
+  .hchart .ax{fill:var(--muted);font-size:12px}
+  .hchart .past{fill:none;stroke:var(--muted);stroke-opacity:.55;stroke-width:1.5}
+  .hchart .cur{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+  .hchart .hdot{fill:var(--accent);stroke:var(--panel);stroke-width:2}
+  .hchart .fc{fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:6 4}
+  .hchart .band{fill:var(--accent-soft)}
+  .hchart .now{stroke:var(--muted);stroke-dasharray:3 3}
+  .hchart .hov{stroke:var(--text);stroke-opacity:.35}
+  .htip{position:absolute;top:6px;z-index:1;pointer-events:none;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:6px 9px;font-size:12px;line-height:1.5;box-shadow:var(--shadow);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -166,6 +181,7 @@
     <label>Moeda <select id="moeda"><option value="c">Chaos</option><option value="div">Divine</option></select></label>
     <button id="atualizar" class="primary">Atualizar preços</button>
     <p class="muted" id="info"></p>
+    <div class="conta"><span class="who" id="who"></span><a href="#/admin" id="adm" hidden>Admin</a><button id="sair">Sair</button></div>
   </div>
   <nav id="nav"></nav>
   <nav id="extras"></nav>
@@ -174,8 +190,13 @@
 <script type="module">
 import { calc, preFights, withPre } from './calc.js';
 
-const STATIC = false; // build.mjs flips this to true in the GitHub Pages copy
-const lgFile = (lg) => lg.replace(/[^a-zA-Z0-9]/g, '_');
+// a 401 means the session ended: go to the login page and leave the pending call unresolved
+const api = (url, opts) => fetch(url, opts).then((r) => {
+  if (r.status !== 401) return r;
+  location.href = '/login';
+  return new Promise(() => {});
+});
+const JSON_HEADERS = { 'content-type': 'application/json' };
 
 const LEAGUES = ['Covens', 'Hardcore Covens', 'Standard', 'Hardcore'];
 const mg = (c) => c.margin ?? -1e15;
@@ -248,8 +269,8 @@ async function load(refresh) {
   btn.disabled = true;
   $('#info').textContent = 'Carregando...';
   try {
-    const r = await fetch(STATIC ? `api/data-${lgFile(liga)}.json` : `/api/data?league=${encodeURIComponent(liga)}${refresh ? '&refresh=1' : ''}`);
-    const j = await r.json().catch(() => ({})); // static copy: a missing file is an HTML 404
+    const r = await api(`/api/data?league=${encodeURIComponent(liga)}${refresh ? '&refresh=1' : ''}`);
+    const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     D = j;
     $('#nav').innerHTML = '<h4>Estratégias</h4><a href="#/top">Top lucros</a>' + D.categories.map((c) => `<a href="#/c/${encodeURIComponent(c.slug)}"><span class="wi">${ico(c.icon, 's')}${esc(c.name)}</span> <span class="cnt">${esc(c.count)}</span></a>`).join('');
@@ -257,20 +278,23 @@ async function load(refresh) {
     route();
   } catch (e) {
     $('#info').textContent = '';
-    main.innerHTML = `<p class="err">Erro: ${esc(e.message)}</p>`;
+    // the logins page does not use the prices, so a failed load must not replace it
+    if (!$('#adm-form')) main.innerHTML = `<p class="err">Erro: ${esc(e.message)}</p>`;
   } finally {
     btn.disabled = false;
   }
 }
 
 function route() {
-  if (!D) return;
   const hash = location.hash || '#/top';
   navOn();
   const [k, ...rest] = hash.replace(/^#\/?/, '').split('/');
   const arg = dec(rest.join('/'));
+  if (k === 'admin') return adminView();
+  if (!D) return;
   if (k === 's') detail(arg);
   else if (k === 'x') extraView(arg);
+  else if (k === 'h') itemView(arg);
   else listView(k === 'c' ? arg : null);
 }
 
@@ -452,7 +476,7 @@ async function loadExtra(refresh) {
   Object.assign(xv, { league: lg, busy: true, err: null });
   updateExtra();
   try {
-    const r = await fetch(STATIC ? `api/extra-${slug}-${lgFile(lg)}.json` : `/api/extra/${encodeURIComponent(slug)}?league=${encodeURIComponent(lg)}${refresh ? '&refresh=1' : ''}`);
+    const r = await api(`/api/extra/${encodeURIComponent(slug)}?league=${encodeURIComponent(lg)}${refresh ? '&refresh=1' : ''}`);
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || (r.status === 404 ? 'Sem dados para esta liga' : `HTTP ${r.status}`));
     if (tok === xTok) { xv.data = j; xv.sort ??= j.defaultSort; }
@@ -496,7 +520,9 @@ function renderExtraTable() {
   const lkKey = ['name', 'base'].includes(iconKey) ? iconKey : null;
   const body = shown.map((r) => `<tr>${d.columns.map((c) => {
     const lk = c.key === lkKey ? links(r[c.key], xv.league) : '';
-    return `<td class="${xcls(c, r)}">${c.key === iconKey && (r.icon || lk) ? `<span class="wi">${ico(r.icon)}<span class="wi wrap">${xfmt(c, r[c.key])}${lk}</span></span>` : xfmt(c, r[c.key])}</td>`;
+    // a row with href (previsao: its item page) links the name to it
+    const txt = c.key === iconKey && r.href ? `<a class="name" href="${esc(r.href)}">${xfmt(c, r[c.key])}</a>` : xfmt(c, r[c.key]);
+    return `<td class="${xcls(c, r)}">${c.key === iconKey && (r.icon || lk) ? `<span class="wi">${ico(r.icon)}<span class="wi wrap">${txt}${lk}</span></span>` : txt}</td>`;
   }).join('')}</tr>`).join('');
   $('#xtbl').innerHTML = `<div class="card"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
@@ -515,6 +541,159 @@ function xfmt(c, v) {
   return r1(v);
 }
 
+// #/h/<id>: histórico e previsão de um item (/api/history); o gráfico é desenhado na largura da caixa
+let hist = null, hTok = 0; // resposta aberta e numero da ultima requisicao
+const BACK = '<p><a class="chip" href="#/x/previsao">&larr; Previsão de preços</a></p>';
+// the +30 forecast in words, the same wording as the calculator's column
+const sinalTxt = (f) => (f.trend === 2 ? `Sobe em todas (${f.n} de ${f.n})` : f.trend === 1 ? `Sobe em quase todas (${f.up} de ${f.n})` : f.trend === -2 ? `Cai em todas (${f.n} de ${f.n})` : f.trend === -1 ? `Cai em quase todas (${f.down} de ${f.n})` : 'Sem padrão');
+// value of a series on day index d, or the nearest one up to 2 days away (as forecast.mjs does)
+const nearAt = (s, d) => { for (const o of [0, -1, 1, -2, 2]) { const v = s?.[d + o]; if (v > 0) return v; } return null; };
+
+async function itemView(id) {
+  cur = null;
+  const tok = ++hTok, want = location.hash, lg = liga;
+  hist = null;
+  main.innerHTML = `${BACK}<p class="muted"><span class="spin"></span> Carregando...</p>`;
+  try {
+    const r = await api(`/api/history?league=${encodeURIComponent(lg)}&id=${encodeURIComponent(id)}`);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    if (tok === hTok && location.hash === want) { hist = j; itemHtml(); }
+  } catch (e) {
+    if (tok === hTok && location.hash === want) main.innerHTML = `${BACK}<p class="err">Erro: ${esc(e.message)}</p>`;
+  }
+}
+
+function itemHtml() {
+  const h = hist, past = Object.entries(h.past), f30 = h.at[30], cols = [1, 7, 14, 30, 60, 90];
+  const sg = (x) => `${x > 0 ? '+' : ''}${pct(x)}`;
+  const card = (lbl, f) => `<div class="stat"><span class="lbl">${lbl}</span><b>${esc(f ? money(f.mid) : '-')}</b><small>${esc(f ? [h.now > 0 ? sg(100 * (f.mid / h.now - 1)) : '', `${money(f.lo)} a ${money(f.hi)}`].filter(Boolean).join(' · ') : '-')}</small></div>`;
+  // prices by day index (chaos) for the table
+  const curAt = [], fcMid = [];
+  for (const [d, p] of h.cur) curAt[d] = p;
+  for (const b of h.band) fcMid[b.d] = b.mid;
+  main.innerHTML = `
+    ${BACK}
+    <div class="hd">${ico(h.icon, 'xl')}<h2>${esc(h.name)}</h2></div>
+    <p><span class="chip">Dia ${h.day + 1} da liga</span></p>
+    <div class="stats">
+      <div class="stat"><span class="lbl">Hoje</span><b>${esc(money(h.now))}</b><small>${h.now > 0 ? 'preço atual' : 'sem preço'}</small></div>
+      ${card('+7 dias', h.at[7])}${card('+14 dias', h.at[14])}${card('+30 dias', f30)}${card('+60 dias', h.at[60])}
+    </div>
+    <p>${esc(f30 ? `${sinalTxt(f30)} (subiu em ${f30.up}, caiu em ${f30.down} de ${f30.n} ligas)` : 'Sem previsão para +30 dias.')}</p>
+    <h3>Histórico e previsão</h3>
+    <div class="card" style="padding:12px 14px">
+      <div class="legend">
+        <span><span class="dot" style="background:var(--muted);opacity:.55"></span>Ligas passadas (${past.length})</span>
+        <span><span class="dot" style="background:var(--accent)"></span>${esc(liga)} (liga atual)</span>
+        <span><span class="dot" style="background:none;width:14px;height:0;border-top:2px dashed var(--accent);border-radius:0"></span>Previsão</span>
+        <span><span class="dot" style="background:var(--accent-soft);border:1px solid var(--accent);border-radius:2px"></span>Faixa das ligas passadas</span>
+      </div>
+      <div id="hchart" style="position:relative;margin-top:8px"></div>
+    </div>
+    <h3>Preços por dia de liga</h3>
+    <div class="card"><table><thead><tr><th>Liga</th>${cols.map((n) => `<th class="num">Dia ${n}</th>`).join('')}</tr></thead><tbody>${[...past, [`${liga} (atual)`, curAt], ['Previsão', fcMid]].map(([name, s]) => `<tr><td>${esc(name)}</td>${cols.map((n) => `<td class="num">${esc(money(nearAt(s, n - 1)))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  drawHist();
+}
+
+// one SVG for the chart: log scale in chaos (divine when the page is in divine), x = league day 1..120
+function drawHist() {
+  const box = $('#hchart');
+  if (!box || !hist) return;
+  const h = hist, dv = D?.live?.['divine-orb'], k = moeda === 'div' && dv > 0 ? 1 / dv : 1, unit = k === 1 ? 'chaos' : 'divine';
+  const W = box.clientWidth || 640, H = 320, L = 56, R = 12, T = 22, B = 36, PW = W - L - R, PH = H - T - B;
+  const X = (d) => L + (d / 119) * PW;
+  const C = (v) => v * k;
+  const past = Object.entries(h.past);
+  // the forecast band starts at today's price
+  const fan = [...(h.now > 0 && h.day >= 0 ? [{ d: h.day, lo: h.now, mid: h.now, hi: h.now }] : []), ...h.band];
+  const vals = [...past.flatMap(([, s]) => s), ...h.cur.map(([, p]) => p), ...fan.flatMap((b) => [b.lo, b.hi])].filter((v) => v > 0).map(C);
+  if (!vals.length) { box.innerHTML = '<p class="muted">Sem preços para desenhar.</p>'; return; }
+  const mn = Math.min(...vals), mx = Math.max(...vals), lo = mn, hi = mx > mn ? mx : mn * 2;
+  const Y = (v) => T + PH - (Math.log(v / lo) / Math.log(hi / lo)) * PH;
+  // a path through the points, a gap wherever a day is missing
+  const line = (pts) => pts.map(([d, v], i) => `${i && pts[i - 1][0] === d - 1 ? 'L' : 'M'}${X(d).toFixed(1)} ${Y(v).toFixed(1)}`).join('');
+  const ticks = [];
+  for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++) for (const m of [1, 2, 5]) if (m * 10 ** e >= lo && m * 10 ** e <= hi) ticks.push(m * 10 ** e);
+  const cf = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 2 });
+  const grid = ticks.map((t) => `<line class="g" x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}"/><text class="ax" x="${L - 6}" y="${Y(t) + 4}" text-anchor="end">${cf.format(t)}</text>`).join('');
+  const xs = [1, 30, 60, 90, 120].map((n) => `<line class="g" x1="${X(n - 1)}" x2="${X(n - 1)}" y1="${T}" y2="${T + PH}"/><text class="ax" x="${X(n - 1)}" y="${T + PH + 16}" text-anchor="${n === 1 ? 'start' : n === 120 ? 'end' : 'middle'}">${n}</text>`).join('');
+  const pastSvg = past.map(([, s]) => `<path class="past" d="${line(s.map((v, d) => [d, C(v)]).filter(([, v]) => v > 0))}"/>`).join('');
+  const band = fan.length > 1 ? `<polygon class="band" points="${[...fan.map((b) => `${X(b.d)},${Y(C(b.hi))}`), ...fan.map((b) => `${X(b.d)},${Y(C(b.lo))}`).reverse()].join(' ')}"/>` : '';
+  const mid = fan.length ? `<path class="fc" d="${line(fan.map((b) => [b.d, C(b.mid)]))}"/>` : '';
+  const last = h.cur.at(-1);
+  const curSvg = last ? `<path class="cur" d="${line(h.cur.map(([d, p]) => [d, C(p)]))}"/><circle class="hdot" cx="${X(last[0])}" cy="${Y(C(last[1]))}" r="4"/>` : '';
+  const todaySvg = h.day >= 0 && h.day < 120 ? `<line class="now" x1="${X(h.day)}" x2="${X(h.day)}" y1="${T}" y2="${T + PH}"/><text class="ax" x="${X(h.day) + 4}" y="${T + 13}">hoje</text>` : '';
+  box.innerHTML = `<svg class="hchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`Preço de ${h.name} por dia de liga: ligas passadas, liga atual e previsão`)}">${grid}${xs}<line class="g" x1="${L}" x2="${W - R}" y1="${T + PH}" y2="${T + PH}"/>${pastSvg}${band}${mid}${curSvg}${todaySvg}<text class="ax" x="4" y="13">Preço em ${unit}, escala log</text><text class="ax" x="${L + PW / 2}" y="${H - 6}" text-anchor="middle">Dia da liga</text><line id="hx" class="hov" x1="0" x2="0" y1="${T}" y2="${T + PH}" style="visibility:hidden"/><rect x="${L}" y="${T}" width="${PW}" height="${PH}" fill="transparent"/></svg><div class="htip" hidden></div>`;
+  const svg = box.querySelector('svg'), tip = box.querySelector('.htip'), cross = box.querySelector('#hx');
+  const curAt = [], fcBy = [];
+  for (const [d, p] of h.cur) curAt[d] = p;
+  for (const b of h.band) fcBy[b.d] = b;
+  const show = (e) => {
+    const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) * (W / r.width);
+    const d = Math.min(119, Math.max(0, Math.round(((x - L) / PW) * 119)));
+    const lines = [`<b>Dia ${d + 1}</b>`];
+    const c = nearAt(curAt, d);
+    if (c) lines.push(`${esc(liga)} (atual): ${esc(money(c))}`);
+    const f = fcBy[d];
+    if (f) lines.push(`Previsão: ${esc(money(f.mid))} (${esc(money(f.lo))} a ${esc(money(f.hi))})`);
+    for (const [name, s] of past) { const v = nearAt(s, d); if (v) lines.push(`${esc(name)}: ${esc(money(v))}`); }
+    cross.setAttribute('x1', X(d)); cross.setAttribute('x2', X(d)); cross.style.visibility = 'visible';
+    tip.innerHTML = lines.join('<br>');
+    tip.hidden = false;
+    const tw = tip.offsetWidth, left = X(d) + 12 + tw > W ? X(d) - 12 - tw : X(d) + 12;
+    tip.style.left = `${Math.max(0, left)}px`;
+  };
+  svg.addEventListener('pointermove', show);
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('pointerleave', () => { tip.hidden = true; cross.style.visibility = 'hidden'; });
+}
+window.addEventListener('resize', drawHist);
+
+// #/admin: logins; the server answers 403 to anyone who is not an admin
+async function adminView() {
+  cur = null;
+  // the price load calls route() again when it ends: keep the form and what was typed, only refresh the list
+  if (!$('#adm-form')) main.innerHTML = `
+    <h2>Logins</h2>
+    <div id="adm-tbl"><p class="muted"><span class="spin"></span> Carregando...</p></div>
+    <h3>Novo login ou nova senha</h3>
+    <form id="adm-form" class="ctl">
+      <label>Usuário <input id="adm-name" maxlength="32" autocomplete="off" required></label>
+      <label>Senha <input id="adm-pass" type="password" minlength="8" autocomplete="new-password" required></label>
+      <label><input type="checkbox" id="adm-admin"> Admin</label>
+      <button class="primary">Salvar</button>
+    </form>
+    <p class="err" id="adm-err"></p>`;
+  admList();
+}
+
+async function admList() {
+  const r = await api('/api/admin/users');
+  if (r.status === 403) return (main.innerHTML = '<p class="muted">Só para admin.</p>');
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) return ($('#adm-err').textContent = j.error || `HTTP ${r.status}`);
+  $('#adm-tbl').innerHTML = `<div class="card"><table><thead><tr><th>Usuário</th><th>Admin</th><th>Criado em</th><th></th></tr></thead><tbody>${j.map((x) => `<tr><td class="name">${esc(x.name)}</td><td>${x.admin ? '<span class="chip info">Sim</span>' : 'Não'}</td><td>${esc(new Date(x.createdAt).toLocaleString('pt-BR'))}</td><td><button data-del="${esc(x.name)}">Excluir</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+async function admSave() {
+  const err = $('#adm-err');
+  err.textContent = '';
+  const r = await api('/api/admin/users', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ name: $('#adm-name').value, password: $('#adm-pass').value, admin: $('#adm-admin').checked }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) return (err.textContent = j.error || `HTTP ${r.status}`);
+  $('#adm-form').reset();
+  admList();
+}
+
+async function admDelete(name) {
+  if (!confirm(`Excluir o login ${name}? A pessoa perde o acesso na hora.`)) return;
+  const r = await api(`/api/admin/users?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) return ($('#adm-err').textContent = j.error || `HTTP ${r.status}`);
+  admList();
+}
+
 function onEdit(e) {
   const t = e.target;
   if (['q', 'sort', 'pos', 'drop', 'unk'].includes(t.id)) return fillList();
@@ -526,11 +705,19 @@ function onEdit(e) {
 
 function onClick(e) {
   if (e.target.id === 'reset' && cur) { store.del('ov:' + cur.id); detail(String(cur.id)); }
+  if (e.target.dataset.del) admDelete(e.target.dataset.del);
+}
+
+function onSubmit(e) {
+  if (e.target.id !== 'adm-form') return;
+  e.preventDefault();
+  admSave();
 }
 
 main.addEventListener('input', onEdit);
 main.addEventListener('change', onEdit);
 main.addEventListener('click', onClick);
+main.addEventListener('submit', onSubmit);
 window.addEventListener('hashchange', route);
 
 const $liga = $('#liga'), $moeda = $('#moeda');
@@ -540,7 +727,15 @@ $moeda.value = moeda;
 $liga.addEventListener('change', () => { liga = $liga.value; store.set('liga', liga); load(false); });
 $moeda.addEventListener('change', () => { moeda = $moeda.value; store.set('moeda', moeda); route(); });
 $('#atualizar').addEventListener('click', () => load(true));
-fetch(STATIC ? 'api/extras.json' : '/api/extras').then((r) => (r.ok ? r.json() : [])).then((list) => {
+$('#sair').addEventListener('click', async () => {
+  await api('/api/logout', { method: 'POST', headers: JSON_HEADERS }).catch(() => {});
+  location.href = '/login';
+});
+api('/api/me').then((r) => r.json()).then((me) => {
+  $('#who').textContent = me.user;
+  $('#adm').hidden = !me.admin;
+});
+api('/api/extras').then((r) => (r.ok ? r.json() : [])).then((list) => {
   EXTRAS = list;
   $('#extras').innerHTML = list.length ? `<h4>Calculadoras</h4>${list.map((x) => `<a href="#/x/${encodeURIComponent(x.slug)}">${esc(x.title)}</a>`).join('')}` : '';
   navOn();

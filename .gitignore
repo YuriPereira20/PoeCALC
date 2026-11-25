@@ -1,6 +1,8 @@
-dist/
 node_modules/
 .claude/
-# hourly cache, rebuilt by the server and by the Pages workflow
+# hourly cache, rebuilt by the server
 data/prices-*.json
 deploy.log
+# DATA_DIR: users.json and the session secret
+var/
+dist/

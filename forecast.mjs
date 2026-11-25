@@ -1,0 +1,83 @@
+// Price forecast from past leagues: how an item's price moved between two league days in each past league, applied to
+// today's price. Checked against the past leagues themselves (backtest below): the full typical move predicts worse
+// than "the price stays as it is", half of it predicts a little better, and it only really helps when the past
+// leagues agree on the direction. So the page shows that agreement next to every number.
+
+// first day of the running leagues; update together with LEAGUES in server.mjs when a league starts
+export const STARTS = { Covens: '2026-11-13', 'Hardcore Covens': '2026-11-13' };
+// day index (0 = first day) of a date in a league, null for leagues without a start date (the permanent ones)
+export const dayOf = (league, date = new Date()) => (STARTS[league] ? Math.floor((date - Date.parse(STARTS[league])) / 864e5) : null);
+
+const W = 0.5; // share of the past leagues' typical move that is applied: 1 lost to "no change" in the backtest, 0.5 won
+const FLAT = 0.05; // a move under 5% counts as neither up nor down
+
+// value of a series on day index d (0 = first day of the league), or the nearest one up to 2 days away
+export const at = (s, d) => {
+  for (const o of [0, -1, 1, -2, 2]) {
+    const v = s?.[d + o];
+    if (typeof v === 'number' && v > 0) return v;
+  }
+  return null;
+};
+
+// median of the prices from 2 days before to 2 days after d: one odd daily price must not set a whole league's move
+export const smooth = (s, d) => {
+  const xs = [];
+  for (let k = d - 2; k <= d + 2; k++) if (typeof s?.[k] === 'number' && s[k] > 0) xs.push(s[k]);
+  return xs.length ? xs.sort((a, b) => a - b)[xs.length >> 1] : null;
+};
+
+// linear interpolation between sorted values
+const quantile = (xs, q) => {
+  const p = q * (xs.length - 1), i = Math.floor(p), j = Math.min(i + 1, xs.length - 1);
+  return xs[i] + (xs[j] - xs[i]) * (p - i);
+};
+
+// past: array of series (arrays of chaos prices by day index, null = no data)
+// day: day index to predict. anchor/price: today's day index and price in the running league.
+// Returns null when fewer than 3 past leagues have data, else { lo, mid, hi, n, up, down, trend }:
+// lo/mid/hi = 25%, 50% and 75% of the past leagues; n = leagues used; up/down = leagues that moved more than 5%;
+// trend = 2 or -2 when every league moved the same way (4 leagues or more, median move over 15%), 1 or -1 when all
+// but one did, 0 otherwise.
+// Without anchor/price (league not started, item without a price) it is the plain spread of the past prices on that day.
+export function forecast(past, day, anchor = null, price = null) {
+  if (anchor == null || !(price > 0)) {
+    const xs = past.map((s) => smooth(s, day)).filter((x) => x != null).sort((a, b) => a - b);
+    return xs.length < 3 ? null : { lo: quantile(xs, 0.25), mid: quantile(xs, 0.5), hi: quantile(xs, 0.75), n: xs.length, up: 0, down: 0, trend: 0 };
+  }
+  const rs = past.map((s) => {
+    const a = smooth(s, anchor), v = smooth(s, day);
+    return a && v ? Math.log(v / a) : null;
+  }).filter((x) => x != null).sort((a, b) => a - b);
+  if (rs.length < 3) return null;
+  const n = rs.length, m = quantile(rs, 0.5), up = rs.filter((r) => r > FLAT).length, down = rs.filter((r) => r < -FLAT).length;
+  const same = m > 0 ? up : down;
+  const trend = n >= 4 && Math.abs(m) > 0.15 && same >= n - 1 ? Math.sign(m) * (same === n ? 2 : 1) : 0;
+  const to = (q) => price * Math.exp(W * quantile(rs, q));
+  return { lo: to(0.25), mid: to(0.5), hi: to(0.75), n, up, down, trend };
+}
+
+// leave-one-out check: each past league in turn plays the running league, predicted from the others
+// items: object id -> { League: series }. Errors are the median of |predicted / actual - 1|.
+// Returns { model, naive, n } over every prediction ("naive" = the price stays as it is), plus `strong` with the same
+// three for the predictions with trend 2 or -2 and `hit`, the share of those where the price did move that way.
+export function backtest(items, anchor, horizon) {
+  const all = { model: [], naive: [] }, strong = { model: [], naive: [] };
+  let hit = 0;
+  for (const byLeague of Object.values(items)) {
+    for (const [L, s] of Object.entries(byLeague)) {
+      const now = at(s, anchor), actual = smooth(s, anchor + horizon);
+      if (!(now >= 1) || !actual) continue;
+      const f = forecast(Object.entries(byLeague).filter(([k]) => k !== L).map(([, o]) => o), anchor + horizon, anchor, now);
+      if (!f) continue;
+      for (const g of Math.abs(f.trend) === 2 ? [all, strong] : [all]) {
+        g.model.push(Math.abs(f.mid / actual - 1));
+        g.naive.push(Math.abs(now / actual - 1));
+      }
+      if (Math.abs(f.trend) === 2 && Math.sign(Math.log(actual / now)) === Math.sign(f.trend)) hit++;
+    }
+  }
+  const median = (xs) => (xs.length ? quantile(xs.sort((a, b) => a - b), 0.5) : null);
+  const sum = (g) => ({ model: median(g.model), naive: median(g.naive), n: g.model.length });
+  return { ...sum(all), strong: { ...sum(strong), hit: strong.model.length ? hit / strong.model.length : null } };
+}

@@ -3,6 +3,15 @@ import { readFile } from 'node:fs/promises';
 import { calc, preFights, withPre } from './public/calc.js';
 import { summarize, CHAOS, DIVINE } from './extras/_exchange.mjs';
 import { belt, UNID, BELT_IDS } from './custom.mjs';
+import { at, smooth, dayOf, forecast, backtest } from './forecast.mjs';
+import { slug, candidateIds } from './import-history.mjs';
+import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { hashPassword, verifyPassword, sign, verify } from './auth.mjs';
 
 const { strategies } = JSON.parse(await readFile(new URL('./data/strategies.json', import.meta.url), 'utf8'));
 const near = (a, b, what) => assert.ok(Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b)), `${what}: ${a} != ${b}`);
@@ -123,5 +132,129 @@ assert.equal(belt([], shrinePrices, shrineCounts).ev, 280);
 assert.equal(belt([], shrinePrices, shrineCounts).strategy, null);
 assert.equal(belt(boss, {}, {}).ev, 0);
 assert.equal(belt(boss, {}, {}).strategy, null);
+
+// auth: scrypt hashes and signed session tokens
+const stored = await hashPassword('senha-certa');
+assert.match(stored, /^scrypt\$[0-9a-f]{32}\$[0-9a-f]{128}$/);
+assert.equal(await verifyPassword('senha-certa', stored), true);
+assert.equal(await verifyPassword('senha-errada', stored), false);
+assert.equal(await verifyPassword('x', 'scrypt$zz$zz'), false); // malformed stored hash
+assert.equal(await verifyPassword('x', 'lixo'), false);
+const tok = sign('ana', 'segredo', 3600e3);
+assert.equal(verify(tok, 'segredo'), 'ana');
+assert.equal(verify(tok, 'outro'), null);
+const [, exp, sig] = tok.split('.');
+assert.equal(verify(tok.replace(`.${exp}.`, `.${Number(exp) + 1}.`), 'segredo'), null); // tampered expiry
+assert.equal(verify(`${Buffer.from('bob').toString('base64url')}.${exp}.${sig}`, 'segredo'), null); // changed user part
+assert.equal(verify(sign('ana', 'segredo', -1000), 'segredo'), null); // expired
+assert.equal(verify('lixo', 'segredo'), null);
+
+// server: login, sessions, admin rules and the login lock, on a fresh data dir
+const base = 'http://localhost:3298';
+const dir = await mkdtemp(join(tmpdir(), 'poecalc-'));
+const adminPw = randomBytes(12).toString('hex');
+const child = spawn(process.execPath, ['server.mjs'], {
+  cwd: fileURLToPath(new URL('.', import.meta.url)),
+  env: { ...process.env, PORT: '3298', HOST: 'localhost', DATA_DIR: dir, ADMIN_USER: 'admin', ADMIN_PASSWORD: adminPw },
+  stdio: ['ignore', 'ignore', 'inherit'],
+});
+const call = (path, { method = 'GET', body, cookie, type = 'application/json' } = {}) => fetch(base + path, {
+  method,
+  redirect: 'manual',
+  headers: { ...(cookie && { cookie }), ...(body !== undefined && { 'content-type': type }) },
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+const login = (user, password) => call('/api/login', { method: 'POST', body: { user, password } });
+const sidOf = (r) => r.headers.get('set-cookie').split(';')[0];
+try {
+  for (let i = 0; ; i++) { // wait until the server answers
+    try { await call('/login'); break; } catch (e) { if (i === 100) throw e; await new Promise((r) => setTimeout(r, 100)); }
+  }
+  let r = await call('/');
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), '/login');
+  assert.equal((await call('/api/data')).status, 401);
+  assert.equal((await call('/login')).status, 200);
+  assert.equal((await login('admin', 'errada')).status, 401);
+  r = await login('admin', adminPw);
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('set-cookie'), /HttpOnly/);
+  const admin = sidOf(r);
+  assert.equal((await (await call('/api/me', { cookie: admin })).json()).admin, true);
+  assert.deepEqual(Object.keys((await (await call('/api/admin/users', { cookie: admin })).json())[0]).sort(), ['admin', 'createdAt', 'name']); // no hash in the list
+  assert.equal((await call('/api/admin/users', { method: 'POST', cookie: admin, body: {}, type: 'text/plain' })).status, 415);
+  assert.equal((await call('/api/admin/users', { method: 'POST', cookie: admin, body: { name: 'ana', password: '12345', admin: false } })).status, 400);
+  assert.equal((await call('/api/admin/users', { method: 'POST', cookie: admin, body: { name: 'ana', password: 'senha-ana-1', admin: false } })).status, 200);
+  r = await login('ana', 'senha-ana-1');
+  assert.equal(r.status, 200);
+  const ana = sidOf(r);
+  assert.equal((await call('/api/admin/users', { cookie: ana })).status, 403);
+  assert.equal((await call('/api/admin/users?name=ana', { method: 'DELETE', cookie: admin })).status, 200);
+  assert.equal((await call('/api/me', { cookie: ana })).status, 401);
+  assert.equal((await call('/api/admin/users?name=admin', { method: 'DELETE', cookie: admin })).status, 400);
+  for (let i = 0; i < 10; i++) assert.equal((await login('ghost', 'x')).status, 401);
+  assert.equal((await login('ghost', 'x')).status, 429);
+} finally {
+  child.kill();
+  await rm(dir, { recursive: true, force: true, maxRetries: 5 });
+}
+
+// forecast.mjs: the series are chaos prices by day index; the expected values are worked out in the comments
+assert.equal(at([0, 5, 7], 2), 7); // exact day
+assert.equal(at([null, 5, null], 2), 5); // the day before
+assert.equal(at([null, null, null, 4], 2), 4); // the day after
+assert.equal(at([1, null, null, null, null, null, null, null, null, null, 1], 5), null); // nothing within 2 days
+assert.equal(at([0], 0), null); // a zero is no price
+assert.equal(at([0, 6], 0), 6); // ...the next day is
+
+// smooth: the median of the 5 days around d (1 9 2 8 3 sorted is 1 2 3 8 9, middle 3); null and 0 are not prices
+assert.equal(smooth([1, 9, 2, 8, 3], 2), 3);
+assert.equal(smooth([null, 5, 0, 7, 100], 2), 7); // 5, 7, 100 -> 7
+assert.equal(smooth([null, 0, null], 1), null);
+
+// dayOf: day 0 is the start date (UTC); 2026-11-25 is 12 days later; the evening before the start is -1
+assert.equal(dayOf('Covens', new Date('2026-11-13T05:00:00Z')), 0);
+assert.equal(dayOf('Covens', new Date('2026-11-25')), 12);
+assert.equal(dayOf('Covens', new Date('2026-11-12T23:00:00Z')), -1);
+assert.equal(dayOf('Standard'), null); // permanent league: no start date
+
+// a league's series is p on days 0-5 and p x r from day 6 on, so the 5-day medians at day 3 (today) and day 9 are p and p x r
+const step = (p, r) => [p, p, p, p, p, p, p * r, p * r, p * r, p * r, p * r, p * r];
+const TODAY = 3, DAY = 9;
+// every league doubles: the median move is ln 2, half of it is applied (mid = 10 x sqrt 2), all 4 up -> trend 2
+const doubled = forecast([step(5, 2), step(5, 2), step(5, 2), step(5, 2)], DAY, TODAY, 10);
+near(doubled.lo, 10 * Math.SQRT2, 'lo com ancora'); near(doubled.mid, 10 * Math.SQRT2, 'mid com ancora'); near(doubled.hi, 10 * Math.SQRT2, 'hi com ancora');
+assert.equal(doubled.n, 4); assert.equal(doubled.up, 4); assert.equal(doubled.trend, 2);
+// 3 of 4 up: the median is still ln 2, but only 3 agree -> trend 1
+const most = forecast([step(5, 2), step(5, 2), step(5, 2), step(5, 0.5)], DAY, TODAY, 10);
+near(most.mid, 10 * Math.SQRT2, 'mid 3 de 4'); assert.equal(most.up, 3); assert.equal(most.trend, 1);
+// 2 up, 2 down: the median move is 0, so mid is the price and there is no trend
+const split = forecast([step(5, 2), step(5, 2), step(5, 0.5), step(5, 0.5)], DAY, TODAY, 10);
+near(split.mid, 10, 'mid misto'); assert.equal(split.trend, 0);
+// every league halves: mid = 10 / sqrt 2, below the price, trend -2
+const halved = forecast([step(5, 0.5), step(5, 0.5), step(5, 0.5), step(5, 0.5)], DAY, TODAY, 10);
+near(halved.mid, 10 / Math.SQRT2, 'mid em queda'); assert.equal(halved.down, 4); assert.equal(halved.trend, -2);
+// no anchor: the spread of the day-2 prices 2, 3, 4, 6 -> 25% 2.75, median 3.5, 75% 4.5; no trend
+const plain = forecast([[2, 2, 2, 2, 2], [3, 3, 3, 3, 3], [4, 4, 4, 4, 4], [6, 6, 6, 6, 6]], 2);
+near(plain.lo, 2.75, 'lo sem ancora'); near(plain.mid, 3.5, 'mid sem ancora'); near(plain.hi, 4.5, 'hi sem ancora'); assert.equal(plain.trend, 0);
+// 3 usable leagues are needed: 2 are not enough, with or without anchor
+assert.equal(forecast([step(5, 2), step(5, 2), Array(12).fill(null)], DAY, TODAY, 10), null);
+assert.equal(forecast([[2, 2, 2, 2, 2], [3, 3, 3, 3, 3]], 2), null);
+
+// backtest: 5 leagues, each doubling from day 3 to day 6; the held-out one is predicted from the other 4.
+// mid 10 x sqrt 2 against the actual 20: error 1 - sqrt(1/2) = 0.293; the naive price 10 against 20: error 0.5.
+// The others all rise by ln 2 (trend 2) and the price did rise, so every strong prediction is a hit
+const doubled5 = Object.fromEntries(['A', 'B', 'C', 'D', 'E'].map((L) => [L, step(10, 2)]));
+const bt = backtest({ x: doubled5 }, 3, 3);
+assert.equal(bt.n, 5);
+near(bt.model, 1 - Math.SQRT1_2, 'erro do modelo'); near(bt.naive, 0.5, 'erro do naive');
+assert.ok(bt.model < bt.naive);
+assert.equal(bt.strong.n, 5); assert.equal(bt.strong.hit, 1);
+
+// import-history.mjs: dump names to tracked ids
+assert.equal(slug("The Wolven King's Bite"), 'the-wolven-kings-bite');
+assert.equal(candidateIds({ name: 'The Stormheart', base: 'Royal Staff', variant: '', links: '6 links' })[0], 'the-stormheart-royal-staff-6l');
+assert.ok(candidateIds({ name: 'Screams of the Desiccated', base: 'Leather Belt', variant: 'Impenetrable, Resonating', links: '' }).includes('screams-of-the-desiccated-impenetrable-resonating'));
+assert.ok(candidateIds({ name: 'Hall of Grandmasters', base: 'Map (Tier 6)', variant: '', links: '' }).includes('hall-of-grandmasters-t6'));
 
 console.log(`ok ${strategies.length} estratégias`);

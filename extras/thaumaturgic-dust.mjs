@@ -2,6 +2,7 @@ import { trpc } from './_lib.mjs';
 
 export const title = 'Thaumaturgic Dust';
 export const order = 50;
+export const group = 'Itens';
 
 export async function load(league) {
   const rows = [];

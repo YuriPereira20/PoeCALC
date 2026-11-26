@@ -4,6 +4,7 @@ import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Upar gema';
 export const order = 80;
+export const group = 'Gemas';
 // XP base para chegar ao nivel-alvo, como no site (U por gemClass)
 const XP = { normal: 0x14612deb, exceptional: 0x727c8335, prime: 0x634dd4d1, awakened: 0x727c8335, awakenedExceptional: 0x727c8335, awakenedPrime: 0x727c8335, transfigured: 0x14612deb };
 

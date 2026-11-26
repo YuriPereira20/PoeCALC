@@ -3,6 +3,7 @@ import { trpc, ninjaIcons } from './_lib.mjs';
 
 export const title = 'Lucro 6-Link';
 export const order = 60;
+export const group = 'Itens';
 
 const QUALITY = 20, MIN_LISTINGS = 10;
 const P_FUSE = 0.001 * (1 + QUALITY / 100) / 1.2; // chance de 6L por Fusing, igual ao site

@@ -10,21 +10,41 @@ const getJson = async (url) => {
   return r.json();
 };
 
-// chaos prices and poe.ninja listing counts for the wanted item ids only; a failed request is skipped, never aborts
+// The 7 daily prices behind a poe.ninja sparkline (7 percent changes against the day before the first point), scaled
+// so that the last one is today's price; null without a full line.
+// shortcut: the last point may be yesterday's close (checked against the official exchange: the fit is within a day),
+// so each price can be one day off; fine for "a week ago" and for a chart, not for exact dates
+export const sparkPrices = (now, s) => (now > 0 && s?.length === 7 && s[6] > -100 ? s.map((x) => (x == null ? null : now * (100 + x) / (100 + s[6]))) : null);
+
+// Chaos prices, poe.ninja listing counts and 7-day sparklines for the wanted item ids only, plus `market`: every item
+// traded on the Currency Exchange with its volume, wanted or not. The same requests give all of it, so nothing here
+// costs an extra call. A failed request is skipped, never aborts.
 export async function fetchLivePrices(league, wantedIds) {
   const wanted = new Set(wantedIds);
   wanted.add('divine-orb');
-  const prices = {}, counts = {};
+  const prices = {}, counts = {}, spark = {}, market = [], seen = new Set();
   // a count is kept only together with the price of the same line (exchange lines have no count)
-  const put = (id, v, n) => { if (wanted.has(id) && !(id in prices) && Number.isFinite(v)) { prices[id] = v; if (n != null) counts[id] = n; } };
+  const put = (id, v, n, s) => {
+    if (!wanted.has(id) || id in prices || !Number.isFinite(v)) return;
+    prices[id] = v;
+    if (n != null) counts[id] = n;
+    if (s?.data?.length === 7) spark[id] = s.data;
+  };
   const warn = (what, e) => console.warn(`preço ignorado (${what}): ${e.message}`);
   const lg = encodeURIComponent(league);
 
   for (const t of EXCHANGE) {
     try {
       const j = await getJson(`https://poe.ninja/poe1/api/economy/exchange/current/overview?league=${lg}&type=${t}`);
-      const detailOf = new Map(j.items.map((i) => [i.id, i.detailsId]));
-      for (const l of j.lines) put(detailOf.get(l.id), l.primaryValue);
+      const itemOf = new Map(j.items.map((i) => [i.id, i]));
+      for (const l of j.lines) {
+        const it = itemOf.get(l.id);
+        put(it?.detailsId, l.primaryValue, null, l.sparkline);
+        // volumePrimaryValue = chaos traded per hour on the official exchange (it matched GGG's API to the unit)
+        if (!it?.detailsId || seen.has(it.detailsId) || !(l.primaryValue > 0) || !(l.volumePrimaryValue > 0)) continue;
+        seen.add(it.detailsId);
+        market.push({ id: it.detailsId, name: it.name, icon: it.image ? `https://web.poecdn.com${it.image}` : null, type: t, price: l.primaryValue, volume: l.volumePrimaryValue, chg: l.sparkline?.totalChange ?? null });
+      }
     } catch (e) { warn(t, e); }
   }
   const uniqueMaps = new Map();
@@ -32,7 +52,7 @@ export async function fetchLivePrices(league, wantedIds) {
     try {
       const j = await getJson(`https://poe.ninja/poe1/api/economy/stash/current/item/overview?league=${lg}&type=${t}`);
       for (const l of j.lines) {
-        put(l.detailsId, l.chaosValue, l.listingCount);
+        put(l.detailsId, l.chaosValue, l.listingCount, l.sparkLine);
         if (t === 'UniqueMap') uniqueMaps.set(l.detailsId, l);
       }
     } catch (e) { warn(t, e); }
@@ -53,5 +73,5 @@ export async function fetchLivePrices(league, wantedIds) {
     }
     for (const id of watchIds) put(id, byId.get(Number(id.match(/^poewatch-(\d+)/)[1])));
   }
-  return { prices, counts };
+  return { prices, counts, spark, market };
 }

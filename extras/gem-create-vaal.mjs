@@ -4,6 +4,7 @@ import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Criar Vaal';
 export const order = 81;
+export const group = 'Gemas';
 
 export async function load(league) {
   const { records, supplementaryPrices: sp } = await loadTab('create-vaal');

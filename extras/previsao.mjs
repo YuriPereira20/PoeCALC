@@ -2,10 +2,12 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BELT_IDS, BELT_ICON } from '../custom.mjs';
-import { backtest, confidence, dayOf, forecast, sinal } from '../forecast.mjs';
+import { backtest, confidence, dayOf, forecast, liveCheck, sinal } from '../forecast.mjs';
+import { sparkPrices } from '../prices.mjs';
 
 export const title = 'Previsão de preços';
 export const order = 0;
+export const group = 'Mercado';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pct = (x) => (x == null ? '-' : `${Math.round(100 * x)}%`);
@@ -22,6 +24,16 @@ export async function load(league) {
   // accuracy of the forecast against "the price stays", tested on the past leagues from today's league day
   const bt = [7, 14, 30].map((h) => [h, backtest(all.items, day, h)]);
   const bins = bt[2][1].bins; // hit rate of each kind of forecast over 30 days, for the confidence column
+  // a week ago's price of each item: its sparkline scaled to today's price, so the change in the last 7 days is real
+  const then = {};
+  for (const [id, s] of Object.entries(cache.spark ?? {})) { const p = sparkPrices(cache.prices?.[id], s)?.[0]; if (p > 0) then[id] = p; }
+  // the same forecast run on this league from a week ago: the backtest above never saw it
+  const lc = day >= 6 ? liveCheck(all.items, then, cache.prices, day - 6, day) : null;
+  let live = '';
+  if (lc?.n >= 30) {
+    live = `Conferência na própria liga ${league}, que o teste não conhecia: partindo dos preços de cerca de uma semana atrás, a previsão errou ${pct(lc.model)} no preço de hoje (supondo que o preço não muda: ${pct(lc.naive)}), em ${lc.n.toLocaleString('pt-BR')} itens.`;
+    if (lc.strong.n >= 10) live += ` Onde todas as ligas passadas concordavam, a direção se confirmou em ${pct(lc.strong.hit)} de ${lc.strong.n.toLocaleString('pt-BR')} itens.`;
+  }
   const rows = [];
   for (const [id, byLeague] of Object.entries(all.items)) {
     const now = cache.prices?.[id];
@@ -32,7 +44,7 @@ export async function load(league) {
     const k = confidence(f30, bins); // how often this kind of forecast got the direction right in the past leagues
     rows.push({
       id, name: names.get(id) ?? id, icon: base.icons?.[id] ?? (BELT_IDS.includes(id) ? BELT_ICON : null), href: `#/h/${encodeURIComponent(id)}`,
-      now, d7: f7?.mid ?? null, d14: f14?.mid ?? null, d30: f30.mid, chg: 100 * (f30.mid / now - 1), sinal: sinal(f30), conf: k ? 100 * k.hit : null, ligas: f30.n,
+      now, sem: then[id] ? 100 * (now / then[id] - 1) : null, d7: f7?.mid ?? null, d14: f14?.mid ?? null, d30: f30.mid, chg: 100 * (f30.mid / now - 1), sinal: sinal(f30), conf: k ? 100 * k.hit : null, ligas: f30.n,
     });
   }
   const acc = bt.map(([h, b]) => `${h} dias, ${pct(b.model)} (supondo que o preço não muda: ${pct(b.naive)})`);
@@ -41,6 +53,7 @@ export async function load(league) {
   const note = [
     `Dia ${day + 1} da liga ${league}. A previsão pega o preço de hoje e aplica metade do movimento que o item costuma fazer nas ligas passadas (${Object.keys(all.leagues).join(', ')}) entre o dia de hoje e a data-alvo.`,
     strong.hit == null ? '' : `O sinal vale mais que o número: quando o item foi para o mesmo lado em todas as ligas, a direção se repetiu em ${pct(strong.hit)} dos ${strong.n.toLocaleString('pt-BR')} casos testados (prazo de 30 dias).`,
+    live,
     'A confiança é a parcela das previsões do mesmo tipo (mesmo acordo entre as ligas passadas e movimento de tamanho parecido) que acertou a direção nas ligas passadas, medida a partir de hoje para 30 dias à frente; abaixo de 60% é quase cara ou coroa.',
     `Erro típico medido nessas ligas, partindo do dia ${day + 1}: ${acc.join('; ')}.`,
     perde.length ? `No prazo de ${perde.join(' e ')} dias, supor que o preço não muda errou menos que a previsão.` : '',
@@ -54,6 +67,7 @@ export async function load(league) {
     columns: [
       { key: 'name', label: 'Item', type: 'text' },
       { key: 'now', label: 'Hoje', type: 'chaos' },
+      { key: 'sem', label: 'Últimos 7 dias (real)', type: 'pct' },
       { key: 'd7', label: '+7 dias', type: 'chaos' },
       { key: 'd14', label: '+14 dias', type: 'chaos' },
       { key: 'd30', label: '+30 dias', type: 'chaos' },

@@ -3,6 +3,7 @@ import { trpc, ninjaIcons } from './_lib.mjs';
 
 export const title = 'Únicas Vestigiais';
 export const order = 70;
+export const group = 'Itens';
 
 export async function load(league) {
   const { rows: src = [] } = await trpc('external.poeWatch.vestigialRanking', { leagueId: league });

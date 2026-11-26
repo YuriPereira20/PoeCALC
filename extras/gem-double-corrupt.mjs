@@ -5,6 +5,7 @@ import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Dupla corrupção (templo)';
 export const order = 86;
+export const group = 'Gemas';
 
 const OPS = ['noChange', 'vaal', 'level', 'quality'];
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));

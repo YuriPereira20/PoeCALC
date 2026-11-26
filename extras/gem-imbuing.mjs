@@ -5,6 +5,7 @@ import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Imbuir (Soul Core)';
 export const order = 84;
+export const group = 'Gemas';
 const CORE = { intelligence: 'Soul Core of Intellect', strength: 'Soul Core of Might', dexterity: 'Soul Core of Finesse', any: 'Soul Core of Instability' };
 
 export async function load(league) {

@@ -5,6 +5,7 @@ import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Awakened via Beast';
 export const order = 85;
+export const group = 'Gemas';
 
 export async function load(league) {
   const { records } = await loadTab('awakened-leveling');

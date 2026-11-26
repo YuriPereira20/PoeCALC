@@ -5,6 +5,7 @@ import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Transfigurar (própria gema)';
 export const order = 88;
+export const group = 'Gemas';
 const val = (slot, league) => (slot?.isVendor ? 1 : typeof slot?.value?.[league] === 'number' ? slot.value[league] : null);
 const activeOnly = (tags) => tags.includes('active') && !tags.includes('support');
 function baseId(r) {

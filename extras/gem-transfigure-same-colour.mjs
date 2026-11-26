@@ -4,6 +4,7 @@ import { loadTab } from './_gems.mjs';
 
 export const title = 'Gemas: Transfigurar (mesma cor)';
 export const order = 87;
+export const group = 'Gemas';
 const COLOURS = { strength: 'Vermelha (FOR)', dexterity: 'Verde (DES)', intelligence: 'Azul (INT)' };
 const JACKPOT = 40; // limiar padrao do site
 const val = (slot, league) => (slot?.isVendor ? 1 : typeof slot?.value?.[league] === 'number' ? slot.value[league] : null);

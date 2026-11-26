@@ -40,11 +40,18 @@
   .brand b{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
   .brand small{display:block;margin-top:4px;font:500 10px/1.2 "Inter",system-ui,sans-serif;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted)}
   .brand .mark{width:34px;height:34px;flex:none;filter:drop-shadow(0 0 10px rgba(226,181,102,.35))}
-  aside h4{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:18px 10px 6px}
-  aside h4::after{content:"";flex:1;height:1px;background:var(--line)}
+  aside .sec > summary{display:flex;align-items:center;gap:8px;list-style:none;cursor:pointer;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:18px 10px 6px}
+  aside .sec > summary::-webkit-details-marker{display:none}
+  aside .sec > summary::before{content:"\25B8";font-size:10px;transition:transform .15s}
+  aside .sec[open] > summary::before{transform:rotate(90deg)}
+  aside .sec > summary::after{content:"";flex:1;height:1px;background:var(--line)}
+  aside .sec > summary:hover{color:var(--text)}
+  aside .sec > summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   nav a{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;color:var(--text);text-decoration:none;transition:background .15s,color .15s}
   nav a:hover{background:var(--panel2)}
   nav a.on{background:linear-gradient(90deg,var(--accent-soft),transparent);color:var(--accent);box-shadow:inset 3px 0 var(--accent);font-weight:600}
+  nav a.dim{opacity:.55}
+  nav a.dim.on{opacity:1}
   .cnt{font-size:11px;color:var(--muted);background:var(--panel2);padding:1px 7px;border-radius:999px}
   /* above the nav: with 14 calculators the bottom of the sidebar is off screen */
   .side-ctl{margin-top:14px;padding:0 10px 14px;border-bottom:1px solid var(--line)}
@@ -150,7 +157,7 @@
     .side-ctl label{margin:0}
     #atualizar,#info,.conta{grid-column:1/-1}
     #info{margin:0}
-    aside h4{margin:12px 10px 4px}
+    aside .sec > summary{margin:12px 10px 4px}
     nav{overflow-x:auto;white-space:nowrap}
     nav a{display:inline-flex;gap:6px;margin:0 6px 6px 0;padding:5px 10px;font-size:13px;border:1px solid var(--line);border-radius:999px;background:var(--panel2);vertical-align:middle}
     nav a.on{box-shadow:none;border-color:var(--accent)}
@@ -219,6 +226,9 @@ const SORTS = {
   'Valor esperado maior': (a, b) => b.c.ev - a.c.ev,
   'Mais runs': (a, b) => b.s.runs - a.s.runs,
   'Nome': (a, b) => (a.s.title || '').localeCompare(b.s.title || '', 'pt-BR'),
+  // null (no price a week ago) sorts last in both
+  'Subiu mais na semana': (a, b) => (a.dw == null) - (b.dw == null) || b.dw - a.dw,
+  'Caiu mais na semana': (a, b) => (a.dw == null) - (b.dw == null) || a.dw - b.dw,
 };
 const $ = (q) => document.querySelector(q);
 const main = $('#main');
@@ -256,6 +266,22 @@ const costHtml = (c) => (c.costUnknown ? `<span class="chip warn">${c.req.length
 const profitTxt = (c) => (c.costUnknown ? `até ${money(c.profit)}` : money(c.profit));
 const profitCls = (c) => (c.costUnknown ? 'muted' : c.profit > 0 ? 'pos' : c.profit < 0 ? 'neg' : '');
 const unitHtml = (u) => (u > 0 ? esc(money(u)) : '<span class="chip warn">sem preço</span>');
+const sgnMoney = (v) => `${v > 0 ? '▲ +' : v < 0 ? '▼ -' : ''}${money(Math.abs(v))}`;
+// null when last week's prices cannot give a comparison
+const weekDelta = (w, c, ov, live7) => {
+  const ids = [...w.req, ...w.rew].map((l) => l.item);
+  if (c.costUnknown || !ids.some((id) => D.week?.[id] > 0)) return null;
+  const dw = c.profit - calc(w, live7, ov, D.counts).profit;
+  return Number.isFinite(dw) ? dw : null;
+};
+const dwHtml = (dw) => (dw != null && Math.abs(dw) >= 0.05 ? `<br><small class="${dw > 0 ? 'pos' : 'neg'}" style="white-space:nowrap;font-weight:400" title="Diferença para o lucro com os preços de cerca de uma semana atrás">${esc(sgnMoney(dw))} na semana</small>` : '');
+const TREND_TH = '<th title="Semana: mudança real do preço. 30 dias: previsão pelas ligas passadas, com a taxa de acerto desse tipo de previsão.">Tendência</th>';
+const trendHtml = (id) => {
+  const o = D.outlook?.[id], wk = D.live?.[id] > 0 && D.week?.[id] > 0 ? 100 * (D.live[id] / D.week[id] - 1) : null, lines = [];
+  if (wk != null) lines.push(`<span class="${wk > 0 ? 'pos' : wk < 0 ? 'neg' : ''}">semana: ${wk > 0 ? '+' : ''}${pct(wk)}</span>`);
+  if (o) lines.push(`<a href="#/h/${encodeURIComponent(id)}">30 dias: ${o[0] > 0 ? '+' : ''}${o[0]}%</a>${o[1] != null ? ` <small>acerto ${o[1]}%</small>` : ''}`);
+  return lines.length ? lines.join('<br>') : '-';
+};
 const catName = (slug) => D.categories.find((c) => c.slug === slug)?.name ?? slug;
 const wiki = (name) => `<a href="https://www.poewiki.net/wiki/${encodeURIComponent(name ?? '')}" target="_blank" rel="noopener">${esc(name)}</a>`;
 // Mercado (busca no trade oficial da liga) e Wiki; sem liga, só Wiki (título da estratégia); sem nome, nada
@@ -275,6 +301,13 @@ function setOv(group, key, val) {
   store.set('ov:' + cur.id, JSON.stringify(ovCur));
 }
 
+// the saved choice wins; without one, Estratégias and Mercado start open and the other sections closed
+const secOpen = (name) => {
+  const saved = store.get('sec:' + name);
+  return saved === null ? (name === 'Estratégias' || name === 'Mercado') : saved === '1';
+};
+const sec = (name, html) => `<details class="sec" data-sec="${esc(name)}"${secOpen(name) ? ' open' : ''}><summary>${esc(name)}</summary>${html}</details>`;
+
 async function load(refresh) {
   const btn = $('#atualizar');
   btn.disabled = true;
@@ -284,7 +317,7 @@ async function load(refresh) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     D = j;
-    $('#nav').innerHTML = '<h4>Estratégias</h4><a href="#/top">Top lucros</a>' + D.categories.map((c) => `<a href="#/c/${encodeURIComponent(c.slug)}"><span class="wi">${ico(c.icon, 's')}${esc(c.name)}</span> <span class="cnt">${esc(c.count)}</span></a>`).join('');
+    $('#nav').innerHTML = sec('Estratégias', '<a href="#/top">Top lucros</a>' + D.categories.map((c) => `<a href="#/c/${encodeURIComponent(c.slug)}"><span class="wi">${ico(c.icon, 's')}${esc(c.name)}</span> <span class="cnt">${esc(c.count)}</span></a>`).join(''));
     $('#info').innerHTML = `Preços: ${D.pricesAt ? esc(new Date(D.pricesAt).toLocaleString('pt-BR')) : '-'}<br>Drop rates: ${esc(new Date(D.syncedAt).toLocaleDateString('pt-BR'))}`;
     route();
   } catch (e) {
@@ -330,7 +363,12 @@ function listView(cat) {
 function fillList() {
   lf = { q: $('#q').value, sort: $('#sort').value, pos: $('#pos').checked, drop: $('#drop').checked, unk: $('#unk').checked };
   const q = lf.q.trim().toLowerCase();
-  const all = D.strategies.filter((s) => !curCat || s.category === curCat).map((s) => ({ s, c: calc(withPre(s, D.strategies), D.live, ovOf(s.id), D.counts) }));
+  // last week's prices, built once for the whole list
+  const live7 = { ...D.live, ...D.week };
+  const all = D.strategies.filter((s) => !curCat || s.category === curCat).map((s) => {
+    const w = withPre(s, D.strategies), ov = ovOf(s.id), c = calc(w, D.live, ov, D.counts);
+    return { s, c, dw: weekDelta(w, c, ov, live7) };
+  });
   // lucro de custo desconhecido é só um teto: fica fora de tudo, salvo com o checkbox marcado
   const shown = all.filter((x) => lf.unk || !x.c.costUnknown), hidden = all.length - shown.length;
   const rows = shown
@@ -349,16 +387,20 @@ function podCard({ s, c }, i) {
   return `<a class="pod" href="#/s/${encodeURIComponent(s.id)}">${ico(simg(s, 128), 'l')}<span class="rk">#${i + 1}</span><span class="ttl">${esc(s.title)}</span><span class="chip">${esc(catName(s.category))}</span><b class="${cls}">${esc(profitTxt(c))}</b><small>Custo ${costHtml(c)} · Esperado ${esc(money(c.ev))} · Margem ${esc(c.costUnknown ? '-' : pct(c.margin))}</small></a>`;
 }
 
-function rowHtml({ s, c }, i) {
+function rowHtml({ s, c, dw }, i) {
   const av = [];
   if (c.noDropData) av.push('sem dados de drop');
   if (c.noPrice > 0) av.push(`${c.noPrice} sem preço`);
   if (c.lowLiq > 0) av.push(`${c.lowLiq} com pouca liquidez`);
   if (!s.fixed && c.topShare > 0.7) av.push(`1 item = ${Math.round(c.topShare * 100)}% do valor`);
   if (c.snapshotPrices > 0) av.push(`${c.snapshotPrices} preços antigos`);
+  // the biggest prize's forecast, shown only when past leagues called its direction well
+  const big = c.rew.filter((l) => !l.excluded && l.expected > 0).sort((a, b) => b.expected - a.expected)[0];
+  const o = big && D.outlook?.[big.item];
+  const fc = o && o[1] >= 75 && Math.abs(o[0]) >= 15 ? `<span class="chip ${o[0] > 0 ? 'pos' : 'warn'}" title="${esc(`${big.name}: previsão de ${o[0]}% em 30 dias, acerto de ${o[1]}% em casos parecidos`)}">maior prêmio tende a ${o[0] > 0 ? 'subir' : 'cair'} em 30 dias</span>` : '';
   const cls = profitCls(c);
   const mHtml = Number.isFinite(c.margin) && !c.costUnknown ? `<span class="pill${c.margin > 0 ? ' pos' : c.margin < 0 ? ' neg' : ''}">${esc(pct(c.margin))}</span>` : '-';
-  return `<tr><td class="num muted">${i + 1}</td><td><span class="wi">${ico(simg(s, 64))}<a class="name" href="#/s/${encodeURIComponent(s.id)}">${esc(s.title)}</a></span></td><td><span class="chip">${esc(catName(s.category))}</span></td><td class="num">${costHtml(c)}</td><td class="num">${esc(money(c.ev))}</td><td class="num ${cls}">${esc(profitTxt(c))}</td><td class="num">${mHtml}</td><td class="num">${(s.runs || 0).toLocaleString('pt-BR')}<br><small>${esc(String(s.versions ?? '').replaceAll(',', ', '))}</small></td><td class="num">${c.costUnknown || c.runs80 == null ? '-' : c.runs80.toLocaleString('pt-BR')}</td><td>${av.map((w) => `<span class="chip warn">${esc(w)}</span>`).join('')}</td></tr>`;
+  return `<tr><td class="num muted">${i + 1}</td><td><span class="wi">${ico(simg(s, 64))}<a class="name" href="#/s/${encodeURIComponent(s.id)}">${esc(s.title)}</a></span></td><td><span class="chip">${esc(catName(s.category))}</span></td><td class="num">${costHtml(c)}</td><td class="num">${esc(money(c.ev))}</td><td class="num ${cls}">${esc(profitTxt(c))}${dwHtml(dw)}</td><td class="num">${mHtml}</td><td class="num">${(s.runs || 0).toLocaleString('pt-BR')}<br><small>${esc(String(s.versions ?? '').replaceAll(',', ', '))}</small></td><td class="num">${c.costUnknown || c.runs80 == null ? '-' : c.runs80.toLocaleString('pt-BR')}</td><td>${av.map((w) => `<span class="chip warn">${esc(w)}</span>`).join('')}${fc}</td></tr>`;
 }
 
 function detail(id) {
@@ -389,6 +431,7 @@ function detail(id) {
       <div class="stat"><span class="lbl">Custo</span><b data-k="cost"></b></div>
       <div class="stat"><span class="lbl">Valor esperado</span><b data-k="ev"></b></div>
       <div class="stat"><span class="lbl">Lucro</span><b data-k="profit"></b></div>
+      <div class="stat"><span class="lbl">Na semana</span><b data-k="week"></b><small data-k="weekPrev"></small></div>
       <div class="stat"><span class="lbl">Margem</span><b data-k="margin"></b></div>
       <div class="stat"><span class="lbl">Runs p/ 80%</span><b data-k="runs80"></b></div>
     </div>
@@ -396,9 +439,9 @@ function detail(id) {
     <h3>Composição do valor esperado</h3>
     <div id="comp"></div>
     <h3>Requisitos</h3>
-    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th><th class="num">Total</th><th>Fonte</th></tr></thead><tbody>${s.req.map((l, i) => `<tr data-r="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}${links(l.name, liga)}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.req[i].unit)}</td><td class="num" data-k="total"></td><td data-k="src"></td></tr>`).join('')}</tbody></table></div>
+    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th>${TREND_TH}<th class="num">Total</th><th>Fonte</th></tr></thead><tbody>${s.req.map((l, i) => `<tr data-r="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}${links(l.name, liga)}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.req[i].unit)}</td><td>${trendHtml(l.item)}</td><td class="num" data-k="total"></td><td data-k="src"></td></tr>`).join('')}</tbody></table></div>
     <h3>Recompensas</h3>
-    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th><th class="num">Anúncios</th><th class="num">Drop %</th><th>Excluir</th><th class="num">Valor esperado</th><th>Grupo</th><th>Fonte</th></tr></thead><tbody>${order.map((i) => { const l = s.rew[i], n = c.rew[i].count; return `<tr data-w="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}${links(l.name, liga)}${l.from && l.from !== s.title ? `<span class="chip">${esc(l.from)}</span>` : ''}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.rew[i].unit)}</td><td class="num${n < 10 ? ' warn' : ''}">${n == null ? '-' : n.toLocaleString('pt-BR')}</td><td class="num">${esc(pct(l.rate * 100))}</td><td><input type="checkbox" data-kind="excl" data-idx="${i}"></td><td class="num"><span data-k="expected"></span><div class="bar"><i data-k="bar"></i></div></td><td>${esc(l.group ?? '-')}</td><td data-k="src"></td></tr>`; }).join('')}</tbody></table></div>
+    <div class="card"><table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Preço unit.</th>${TREND_TH}<th class="num">Anúncios</th><th class="num">Drop %</th><th>Excluir</th><th class="num">Valor esperado</th><th>Grupo</th><th>Fonte</th></tr></thead><tbody>${order.map((i) => { const l = s.rew[i], n = c.rew[i].count; return `<tr data-w="${i}"><td><span class="wi">${ico((D.icons ?? {})[l.item])}${wiki(l.name)}${links(l.name, liga)}${l.from && l.from !== s.title ? `<span class="chip">${esc(l.from)}</span>` : ''}</span></td><td class="num">${esc(l.amount)}</td><td class="num">${unitHtml(c.rew[i].unit)}</td><td>${trendHtml(l.item)}</td><td class="num${n < 10 ? ' warn' : ''}">${n == null ? '-' : n.toLocaleString('pt-BR')}</td><td class="num">${esc(pct(l.rate * 100))}</td><td><input type="checkbox" data-kind="excl" data-idx="${i}"></td><td class="num"><span data-k="expected"></span><div class="bar"><i data-k="bar"></i></div></td><td>${esc(l.group ?? '-')}</td><td data-k="src"></td></tr>`; }).join('')}</tbody></table></div>
     <p><button id="reset">Limpar exclusões</button></p>`;
   updateDetail();
 }
@@ -424,6 +467,11 @@ function updateDetail() {
   main.querySelector('b[data-k="cost"]').innerHTML = costHtml(c);
   for (const k in top) main.querySelector(`b[data-k="${k}"]`).textContent = top[k];
   main.querySelector('b[data-k="profit"]').className = profitCls(c);
+  // computed here, not in detail(), so the exclusions on screen count
+  const wk = main.querySelector('b[data-k="week"]'), dw = weekDelta(cur, c, ovCur, { ...D.live, ...D.week });
+  wk.textContent = dw == null ? '-' : sgnMoney(dw);
+  wk.className = dw > 0 ? 'pos' : dw < 0 ? 'neg' : '';
+  main.querySelector('small[data-k="weekPrev"]').textContent = dw == null ? '' : `lucro há uma semana: ${money(c.profit - dw)}`;
   const unk = c.req.length
     ? 'O custo desta estratégia é desconhecido: não há preço para um ou mais itens de entrada nesta liga (nem no poe.how, nem no poe.ninja ou poe.watch). O lucro mostrado é o máximo possível, sem descontar esses itens.'
     : 'O poe.how não cadastrou os itens de entrada desta estratégia, então o custo é desconhecido. O lucro mostrado é o valor esperado inteiro, sem descontar o custo.';
@@ -448,7 +496,41 @@ function updateDetail() {
 
 // calculadoras extras (extras/<slug>.mjs): uma tabela generica para qualquer uma delas
 function navOn() {
-  document.querySelectorAll('#nav a, #extras a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === (location.hash || '#/top')));
+  const here = location.hash || '#/top';
+  document.querySelectorAll('#nav a, #extras a').forEach((a) => {
+    const on = a.getAttribute('href') === here;
+    a.classList.toggle('on', on);
+    // opened without saving: the section of the open page is not the user's choice
+    const d = a.closest('details');
+    if (on && d) d.open = true;
+  });
+}
+
+// the section already names the group, so its prefix is left out of the link text
+const extraLink = (x, g) => {
+  const t = String(x.title ?? x.slug ?? '');
+  const pre = [`${g}: `, 'Gemas: '].find((p) => t.startsWith(p));
+  return `<a href="#/x/${encodeURIComponent(x.slug)}"${x.n === 0 ? ' class="dim" title="Nenhuma linha com lucro na última leitura"' : ''}>${esc(pre ? t.slice(pre.length) : t)}${Number.isFinite(x.n) ? `<span class="cnt">${esc(x.n)}</span>` : ''}</a>`;
+};
+// a newer request wins, since league changes can answer out of order; a failed fetch keeps the menu as it was
+let exTok = 0;
+async function loadExtras() {
+  const tok = ++exTok;
+  let list = null;
+  try {
+    const r = await api(`/api/extras?league=${encodeURIComponent(liga)}`);
+    if (r.ok) list = await r.json();
+  } catch {}
+  if (tok !== exTok || !Array.isArray(list)) return;
+  EXTRAS = list;
+  const groups = new Map();
+  for (const x of list) {
+    const g = x.group || 'Calculadoras';
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(x);
+  }
+  $('#extras').innerHTML = [...groups].map(([g, xs]) => sec(g, xs.map((x) => extraLink(x, g)).join(''))).join('');
+  navOn();
 }
 
 function extraView(slug) {
@@ -495,7 +577,7 @@ async function loadExtra(refresh) {
     if (tok === xTok) xv.err = e.message;
   } finally {
     // resposta de outra liga/calculadora e descartada; so repinta se a view ainda estiver na tela
-    if (tok === xTok) { xv.busy = false; if ($('#xtbl')) updateExtra(); }
+    if (tok === xTok) { xv.busy = false; if ($('#xtbl')) updateExtra(); loadExtras(); }
   }
 }
 
@@ -599,7 +681,7 @@ function itemHtml() {
   main.innerHTML = `
     ${BACK}
     <div class="hd">${ico(h.icon, 'xl')}<h2>${esc(h.name)}</h2></div>
-    <p><span class="chip">Dia ${h.day + 1} da liga</span></p>
+    <p><span class="chip">Dia ${h.day + 1} da liga</span>${h.volume > 0 ? ` <span class="chip">Volume na bolsa: ${esc(money(h.volume))} por hora</span>` : ''}${h.count != null ? ` <span class="chip">Anúncios: ${h.count.toLocaleString('pt-BR')}</span>` : ''}</p>
     <div class="stats">
       <div class="stat"><span class="lbl">Hoje</span><b>${esc(money(h.now))}</b><small>${h.now > 0 ? 'preço atual' : 'sem preço'}</small></div>
       ${card('+7 dias', h.at[7])}${card('+14 dias', h.at[14])}${card('+30 dias', f30)}${card('+60 dias', h.at[60])}
@@ -764,7 +846,7 @@ const $liga = $('#liga'), $moeda = $('#moeda');
 $liga.innerHTML = LEAGUES.map((l) => `<option>${l}</option>`).join('');
 $liga.value = liga;
 $moeda.value = moeda;
-$liga.addEventListener('change', () => { liga = $liga.value; store.set('liga', liga); load(false); });
+$liga.addEventListener('change', () => { liga = $liga.value; store.set('liga', liga); load(false); loadExtras(); });
 $moeda.addEventListener('change', () => { moeda = $moeda.value; store.set('moeda', moeda); route(); });
 $('#atualizar').addEventListener('click', () => load(true));
 $('#sair').addEventListener('click', async () => {
@@ -775,11 +857,12 @@ api('/api/me').then((r) => r.json()).then((me) => {
   $('#who').textContent = me.user;
   $('#adm').hidden = !me.admin;
 });
-api('/api/extras').then((r) => (r.ok ? r.json() : [])).then((list) => {
-  EXTRAS = list;
-  $('#extras').innerHTML = list.length ? `<h4>Calculadoras</h4>${list.map((x) => `<a href="#/x/${encodeURIComponent(x.slug)}">${esc(x.title)}</a>`).join('')}` : '';
-  navOn();
-}).catch(() => {});
+// click, not toggle: navOn() also opens sections, and toggle fires for those too
+$('aside').addEventListener('click', (e) => {
+  const s = e.target.closest('summary');
+  if (s) store.set('sec:' + s.parentElement.dataset.sec, s.parentElement.open ? '0' : '1');
+});
+loadExtras();
 load(false);
 </script>
 </body>

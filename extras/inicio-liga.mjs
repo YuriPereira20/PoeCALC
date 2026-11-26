@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { BELT_IDS, BELT_ICON } from '../custom.mjs';
 import { STARTS, W, exact, forecast, sinal } from '../forecast.mjs';
 
-export const title = 'Início de liga: primeiras horas e dias';
-export const order = 1;
+export const title = 'Início de liga';
+export const order = 3;
+export const group = 'Mercado';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // [index, key, label]: index 2 is the third hour (or day) of a league

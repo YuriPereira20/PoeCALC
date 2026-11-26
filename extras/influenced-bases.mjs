@@ -4,6 +4,7 @@ import { trpc } from './_lib.mjs';
 
 export const title = 'Bases Influenciadas';
 export const order = 20;
+export const group = 'Itens';
 const PAGES = 10; // shortcut: so as 500 melhores rotas (o site tem ~60 mil em ~1200 paginas); aumentar se precisar de mais
 const INF = { shaper: 'Shaper', elder: 'Elder', crusader: 'Crusader', redeemer: 'Redeemer', hunter: 'Hunter', warlord: 'Warlord' };
 const METHOD = { 'target-orb': '1: base limpa + orb', 'market-harvest': '2: base influenciada + Harvest', 'orb-harvest': '3: orb mais barato + Harvest' };

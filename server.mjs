@@ -3,10 +3,11 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { fetchLivePrices } from './prices.mjs';
+import { fetchLivePrices, sparkPrices } from './prices.mjs';
 import { belt, UNID, BELT_IDS, BELT_ICON } from './custom.mjs';
 import { STARTS, backtest, confidence, dayOf, forecast } from './forecast.mjs';
 import { hashPassword, verifyPassword, sign, verify } from './auth.mjs';
+import { buildDays } from './extras/_builds.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3210;
@@ -46,29 +47,35 @@ const recordDay = (league, cache) => (recording = recording.catch(() => {}).then
 const refreshPrices = async (league) => {
   const base = JSON.parse(await readFile(join(ROOT, 'data', 'strategies.json'), 'utf8'));
   const wanted = new Set([...BELT_IDS, ...base.strategies.flatMap((s) => [...s.req, ...s.rew].map((l) => l.item))]);
-  const { prices, counts } = await fetchLivePrices(league, wanted).catch(() => ({ prices: {}, counts: {} }));
+  const { prices, counts, spark, market } = await fetchLivePrices(league, wanted).catch(() => ({ prices: {} }));
   // empty result = every request failed: keep the old cache if there is one
   if (!Object.keys(prices).length) return null;
-  const cache = { at: new Date().toISOString(), prices, counts };
+  const cache = { at: new Date().toISOString(), prices, counts, spark, market };
   await writeFile(join(ROOT, 'data', `prices-${leagueFile(league)}.json`), JSON.stringify(cache));
   await recordDay(league, cache).catch((e) => console.error('histórico não gravado:', e.message));
   return cache;
 };
 
-// daily snapshot of the running league's top builds on poe.ninja, read by the meta-builds calculator: one entry per UTC day
-const recordBuilds = async () => {
-  const r = await fetch('https://poe.ninja/poe1/api/data/build-index-state', { headers: { 'user-agent': 'poe-profit-calculator/1.0' }, signal: AbortSignal.timeout(30000) });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const row = (await r.json()).leagueBuilds?.find((x) => x.leagueName === LEAGUES[0]);
-  if (!row) return;
-  const file = join(DATA_DIR, `meta-${leagueFile(LEAGUES[0])}.json`), day = new Date().toISOString().slice(0, 10);
-  let days = {};
-  try { days = JSON.parse(await readFile(file, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-  if (days[day]) return;
-  days[day] = { total: row.total, top: row.statistics.map(({ class: c, skill, percentage, trend }) => ({ class: c, skill, percentage, trend })) };
-  // a temp file and a rename, like the history: a crash mid-write never leaves a broken file
-  await writeFile(`${file}.tmp`, JSON.stringify(days));
-  await rename(`${file}.tmp`, file);
+// 30-day outlook of every item with history, for the strategy pages: id -> [change in %, confidence in % or null, trend].
+// The same numbers as the forecast calculator; computed once per price refresh.
+const outlooks = new Map(); // league -> { at, out }
+const outlookOf = async (league, cache) => {
+  const day = dayOf(league);
+  if (day === null || !cache) return {};
+  if (outlooks.get(league)?.at === cache.at) return outlooks.get(league).out;
+  const all = await pastHistory().catch(() => null);
+  if (!all) return {};
+  const bins = binsOf(all, day, 30), out = {};
+  for (const [id, byLeague] of Object.entries(all.items)) {
+    const now = cache.prices[id];
+    if (!(now >= 1)) continue; // same floor as the forecast calculator
+    const f = forecast(Object.values(byLeague), day + 30, day, now);
+    if (!f) continue;
+    const k = confidence(f, bins);
+    out[id] = [Math.round(100 * (f.mid / now - 1)), k ? Math.round(100 * k.hit) : null, f.trend];
+  }
+  outlooks.set(league, { at: cache.at, out });
+  return out;
 };
 
 const api = async (u, res) => {
@@ -93,6 +100,9 @@ const api = async (u, res) => {
   const b = belt(base.strategies, live, counts);
   // no price source lists the unidentified belt, so it is worth the average roll
   if (b.ev > 0) live[UNID] ??= b.ev;
+  // prices of about a week ago, from the sparklines that came with the prices: the page compares each profit with them
+  const week = {};
+  for (const [id, s] of Object.entries(cache?.spark ?? {})) { const p = sparkPrices(live[id], s)?.[0]; if (p > 0) week[id] = p; }
   json(res, 200, {
     syncedAt: base.syncedAt,
     league,
@@ -102,6 +112,8 @@ const api = async (u, res) => {
     icons: { ...Object.fromEntries([UNID, ...BELT_IDS].map((id) => [id, BELT_ICON])), ...(base.icons ?? {}) },
     live,
     counts,
+    week,
+    outlook: await outlookOf(league, cache),
   });
 };
 
@@ -120,7 +132,7 @@ const discoverExtras = async () => {
       const url = pathToFileURL(path);
       url.search = `v=${(await stat(path)).mtimeMs}`;
       const mod = await import(url.href);
-      found.push({ slug, title: mod.title ?? slug, order: mod.order ?? 0, load: mod.load });
+      found.push({ slug, title: mod.title ?? slug, order: mod.order ?? 0, group: mod.group ?? 'Calculadoras', load: mod.load });
     } catch (e) {
       console.error(`extras/${f} skipped:`, e);
     }
@@ -162,6 +174,21 @@ const extra = async (u, res, slug) => {
   json(res, 200, { slug, title: m.title, league, at: cache.at, stale, note: cache.note, defaultSort: cache.defaultSort, columns: cache.columns, rows: cache.rows });
 };
 
+// the menu reads each calculator's cache only: running load() for every page would call the exchange on each visit
+const extrasList = async (u, res) => {
+  const league = u.searchParams.get('league') || 'Covens';
+  if (!LEAGUES.includes(league)) return json(res, 400, { error: 'Liga inválida' });
+  const list = await Promise.all((await discoverExtras()).map(async ({ slug, title, order, group }) => {
+    let n = null; // no cache, or one without a profit column, leaves the count out
+    try {
+      const c = JSON.parse(await readFile(join(ROOT, 'data', `extra-${slug}-${leagueFile(league)}.json`), 'utf8'));
+      if (c.columns.some((col) => col.key === 'profit')) n = c.rows.filter((r) => r.profit > 0).length;
+    } catch {}
+    return { slug, title, order, group, n };
+  }));
+  json(res, 200, list);
+};
+
 // data/history.json (import-history.mjs) is read on first use and then kept in memory
 let pastCache = null;
 const pastHistory = async () => (pastCache ??= JSON.parse(await readFile(join(ROOT, 'data', 'history.json'), 'utf8')));
@@ -196,6 +223,8 @@ const itemHistory = async (u, res) => {
   const days = await readFile(join(DATA_DIR, `history-${leagueFile(league)}.json`), 'utf8').then(JSON.parse, () => ({}));
   const day = dayOf(league), now = cache?.prices?.[id] > 0 ? cache.prices[id] : null;
   const cur = Object.entries(days).map(([date, rows]) => [dayOf(league, new Date(date)), rows[id]?.[0]]).filter(([d, p]) => d >= 0 && p > 0);
+  // days the server did not record yet (it started mid-league) come from the item's 7-day sparkline
+  sparkPrices(now, cache?.spark?.[id])?.forEach((p, i) => { const d = day - 6 + i; if (p > 0 && d >= 0 && !cur.some(([x]) => x === d)) cur.push([d, p]); });
   if (now && day >= 0 && !cur.some(([d]) => d === day)) cur.push([day, now]);
   cur.sort((a, b) => a[0] - b[0]);
   // anchored on today's price when there is one; otherwise the plain spread of the past prices on that day
@@ -204,7 +233,7 @@ const itemHistory = async (u, res) => {
   for (let d = Math.max(day + 1, 0); d < 120; d++) { const f = fc(d); if (f) band.push({ d, lo: f.lo, mid: f.mid, hi: f.hi }); }
   // each forecast says how far to trust its direction: the hit rate of its kind in the past leagues
   const at = Object.fromEntries([7, 14, 30, 60].map((h) => { const f = fc(day + h); return [h, f && { ...f, conf: confidence(f, binsOf(all, day, h)) }]; }));
-  json(res, 200, { id, name: line?.name ?? id, icon: base.icons?.[id] ?? (BELT_IDS.includes(id) ? BELT_ICON : null), league, day, now, past, cur, band, at, hours });
+  json(res, 200, { id, name: line?.name ?? id, icon: base.icons?.[id] ?? (BELT_IDS.includes(id) ? BELT_ICON : null), league, day, now, past, cur, band, at, hours, count: cache?.counts?.[id] ?? null, volume: cache?.market?.find((m) => m.id === id)?.volume ?? null });
 };
 
 // shortcut: users in one JSON file, fine for dozens of logins; move to a database if it grows
@@ -335,7 +364,7 @@ const server = createServer(async (req, res) => {
     if (u.pathname === '/api/admin/users') return await adminUsers(req, res, u, me);
     if (u.pathname === '/api/data') return await api(u, res);
     if (u.pathname === '/api/history') return await itemHistory(u, res);
-    if (u.pathname === '/api/extras') return json(res, 200, (await discoverExtras()).map(({ slug, title, order }) => ({ slug, title, order })));
+    if (u.pathname === '/api/extras') return await extrasList(u, res);
     if (u.pathname.startsWith('/api/extra/')) return await extra(u, res, u.pathname.slice('/api/extra/'.length));
 
     const p = decodeURIComponent(u.pathname === '/' ? '/index.html' : u.pathname);
@@ -350,7 +379,7 @@ const server = createServer(async (req, res) => {
 // and the build snapshot goes in the same round
 const refreshTimer = async () => {
   await refreshPrices(LEAGUES[0]).catch((e) => console.error('atualização automática falhou:', e.message));
-  await recordBuilds().catch((e) => console.error('builds do poe.ninja não gravados:', e.message));
+  await buildDays(LEAGUES[0]).catch((e) => console.error('builds do poe.ninja não gravados:', e.message));
 };
 setTimeout(refreshTimer, 10_000).unref();
 setInterval(refreshTimer, 6 * HOUR).unref();

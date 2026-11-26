@@ -3,11 +3,14 @@ import { readFile } from 'node:fs/promises';
 import { calc, preFights, withPre } from './public/calc.js';
 import { summarize, CHAOS, DIVINE } from './extras/_exchange.mjs';
 import { belt, UNID, BELT_IDS } from './custom.mjs';
-import { at, smooth, exact, dayOf, forecast, backtest, sinal, confidence } from './forecast.mjs';
+import { at, smooth, exact, dayOf, forecast, backtest, sinal, confidence, liveCheck } from './forecast.mjs';
+import { sparkPrices } from './prices.mjs';
 import { slug, candidateIds } from './import-history.mjs';
 import { hourPrices } from './import-hours.mjs';
 import { move17 } from './extras/inicio-liga.mjs';
-import { rowsOf } from './extras/meta-builds.mjs';
+import { buildRows } from './extras/meta-builds.mjs';
+import { marketRows } from './extras/mais-vendidos.mjs';
+import { tradeRows } from './extras/trocas.mjs';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -195,6 +198,12 @@ try {
   assert.equal((await call('/api/admin/users?name=ana', { method: 'DELETE', cookie: admin })).status, 200);
   assert.equal((await call('/api/me', { cookie: ana })).status, 401);
   assert.equal((await call('/api/admin/users?name=admin', { method: 'DELETE', cookie: admin })).status, 400);
+  // /api/extras: the menu; every item has a group and n (null or a count), and an unknown league is refused
+  const menu = await call('/api/extras?league=Covens', { cookie: admin });
+  assert.equal(menu.status, 200);
+  const list = await menu.json();
+  assert.ok(Array.isArray(list) && list.length > 0 && list.every((x) => x.group && (x.n === null || typeof x.n === 'number')));
+  assert.equal((await call('/api/extras?league=Nope', { cookie: admin })).status, 400);
   for (let i = 0; i < 10; i++) assert.equal((await login('ghost', 'x')).status, 401);
   assert.equal((await login('ghost', 'x')).status, 429);
 } finally {
@@ -277,6 +286,20 @@ assert.equal(confidence({ bin: 14 }, cb), null);
 cb[14] = { hit: 0.9, n: 30 };
 assert.deepEqual(confidence({ bin: 14 }, cb), { hit: 0.9, n: 30 });
 
+// sparkPrices: 7 daily prices from a sparkline of percent changes, scaled so the last one is today's price
+const spark = [10, 2, -5, 0, null, 8, 4];
+const sp = sparkPrices(100, spark);
+near(sp[6], 100, 'último ponto é o preço de hoje'); near(sp[0], 100 * (100 + 10) / (100 + 4), 'primeiro ponto');
+assert.equal(sp[4], null); // a gap in the line stays a gap
+assert.equal(sparkPrices(100, [1, 2, 3]), null); assert.equal(sparkPrices(0, spark), null); // not a full week, or no price
+// liveCheck: 4 past leagues that all double from day 0 to day 6 (step); X was 10 then and is 20 now, Y was under 1 then
+const four = { A: step(5, 2), B: step(5, 2), C: step(5, 2), D: step(5, 2) };
+const lc = liveCheck({ X: four, Y: four }, { X: 10, Y: 0.5 }, { X: 20, Y: 1 }, 0, 6);
+assert.equal(lc.n, 1); // Y is left out
+assert.equal(lc.strong.n, 1); assert.equal(lc.strong.hit, 1);
+near(lc.model, 1 - Math.SQRT1_2, 'erro do modelo'); near(lc.naive, 0.5, 'erro do naive');
+assert.ok(lc.model < lc.naive);
+
 // import-history.mjs: dump names to tracked ids
 assert.equal(slug("The Wolven King's Bite"), 'the-wolven-kings-bite');
 assert.equal(candidateIds({ name: 'The Stormheart', base: 'Royal Staff', variant: '', links: '6 links' })[0], 'the-stormheart-royal-staff-6l');
@@ -293,12 +316,56 @@ const halved7 = Array.from({ length: 4 }, () => [999, 10, 10, 10, 10, 10, 5]);
 const mv = move17(halved7);
 near(mv.chg, -50, 'variação do dia 2 ao 7'); assert.equal(mv.sinal, 'Cai em todas (4 de 4)');
 assert.deepEqual(move17([]), { chg: null, sinal: 'Sem padrão' });
-// meta-builds: the change since the oldest snapshot day, in percentage points; null without an older day or outside its top 10
-const stats = [{ class: 'Witch', skill: 'Spark', percentage: 6, trend: 1 }, { class: 'Monk', skill: 'Tempest Flurry', percentage: 2, trend: -1 }];
-const snaps = { '2026-11-20': { total: 100, top: [{ class: 'Witch', skill: 'Spark', percentage: 4, trend: 1 }] }, '2026-11-25': { total: 120, top: [] } };
-assert.deepEqual(rowsOf(stats, snaps, '2026-11-25').map((r) => [r.name, r.tend, r.delta]), [['Witch · Spark', 'Subindo', 2], ['Monk · Tempest Flurry', 'Caindo', null]]); // 6 - 4
-assert.deepEqual(rowsOf(stats, { '2026-11-25': snaps['2026-11-25'] }, '2026-11-25').map((r) => r.delta), [null, null]); // only today
-assert.deepEqual(rowsOf(stats, {}, '2026-11-25').map((r) => r.delta), [null, null]); // no file yet
+// meta-builds: each league counts from its latest day; the change is the selected league's latest minus its oldest day
+const tp = (...xs) => xs.map(([c, s, p, t]) => ({ class: c, skill: s, percentage: p, trend: t }));
+const bd = {
+  Covens: { '2026-11-20': { total: 100, top: tp(['Witch', 'Spark', 4, 1]) }, '2026-11-25': { total: 120, top: tp(['Monk', 'Tempest Flurry', 2, -1], ['Witch', 'Spark', 6, 1]) } },
+  'Hardcore Covens': { '2026-11-25': { total: 50, top: tp(['Witch', 'Spark', 5, -1]) } },
+  'HC SSF Covens': { '2026-11-25': { total: 30, top: tp(['Ranger', 'Arrow', 3, -1]) } },
+};
+const br = buildRows(bd, 'Covens', 'Covens');
+assert.deepEqual(br.map((r) => r.name), ['Witch · Spark', 'Monk · Tempest Flurry', 'Ranger · Arrow']); // by the selected league's %, missing last
+assert.deepEqual([br[0].sc, br[0].hc, br[0].ssf, br[0].n, br[0].tend, br[0].delta], [6, 5, null, 2, 'Subindo', 2]); // 2 leagues; trend from the selected one; 6 - 4
+assert.deepEqual([br[1].sc, br[1].hc, br[1].n, br[1].delta], [2, null, 1, null]); // no Monk on the oldest day
+assert.deepEqual([br[2].sc, br[2].hcssf, br[2].n, br[2].tend], [null, 3, 1, 'Caindo']); // not in Covens: trend from HC SSF
+assert.equal(buildRows({ Covens: { '2026-11-25': bd.Covens['2026-11-25'] } }, 'Covens', 'Covens')[0].delta, null); // one day: no change
+
+// mais-vendidos: chaos-orb is the unit, not a row; units = volume / price; shares add up to 100; a link only where there is a page
+const mkt = [
+  { id: 'chaos-orb', name: 'Chaos Orb', icon: null, type: 'Currency', price: 1, volume: 9000, chg: 0 },
+  { id: 'divine-orb', name: 'Divine Orb', icon: 'd.png', type: 'Currency', price: 200, volume: 3000, chg: 1 },
+  { id: 'vaal-x', name: 'Vaal X', icon: null, type: 'Fragment', price: 10, volume: 1000, chg: null },
+  { id: 'mirror', name: 'Mirror', icon: null, type: 'Weird', price: 100000, volume: 4000, chg: -5 },
+];
+const mr = marketRows(mkt, (id) => id !== 'vaal-x');
+assert.deepEqual(mr.map((r) => r.id), ['divine-orb', 'vaal-x', 'mirror']); // chaos-orb skipped
+assert.equal(mr[0].units, 15); // 3000 / 200
+near(mr.reduce((s, r) => s + r.share, 0), 100, 'partes do volume');
+assert.equal(mr[0].href, '#/h/divine-orb'); assert.equal(mr[1].href, undefined);
+assert.deepEqual(mr.map((r) => r.tipo), ['Moeda', 'Fragmento', 'Weird']); // a type without a label stays as it is
+// trocas.mjs: one row from each of the three quick trades, from made-up exchange output (tradeRows reads no network)
+const tIt = (price, hours, volume) => ({ price, hours, volume });
+const tBase = {
+  'Metadata/Items/Currency/Mushrune1': { name: 'Oil 1' },
+  'Metadata/Items/Currency/Mushrune2': { name: 'Oil 2' },
+  'Metadata/Items/Currency/CurrencyPassiveRefund': { name: 'Passive Refund' },
+  'Metadata/Items/Currency/CurrencyUpgradeToRare': { name: 'Upgrade to Rare' },
+  'Metadata/Items/Fragments/Frag': { name: 'Fragmento', properties: { stack_size: 5, full_stack_turns_into: 'Metadata/Items/Fragments/Whole' } },
+  'Metadata/Items/Fragments/Whole': { name: 'Item Inteiro', visual_identity: { dds_file: 'art/whole.dds' } },
+};
+const tItems = new Map([
+  ['Metadata/Items/Currency/Mushrune1', tIt(2, 5, 300)],
+  ['Metadata/Items/Currency/Mushrune2', tIt(8, 5, 200)],
+  ['Metadata/Items/Currency/CurrencyPassiveRefund', tIt(2, 4, 150)],
+  ['Metadata/Items/Currency/CurrencyUpgradeToRare', tIt(3, 4, 120)],
+  ['Metadata/Items/Fragments/Frag', tIt(1, 6, 40)],
+  ['Metadata/Items/Fragments/Whole', tIt(9, 6, 30)],
+]);
+const tr = tradeRows({ items: tItems, base: tBase });
+assert.deepEqual(tr.map((r) => r.kind), ['3 por 1: Óleo', 'Comprar do vendedor: Clarissa, ato 3', 'Montar fragmentos']);
+assert.deepEqual([tr[0].name, tr[0].input, tr[0].cost, tr[0].value, tr[0].profit, tr[0].volume, tr[0].volIn], ['Oil 2', '3× Oil 1', 6, 8, 2, 200, 300]);
+assert.deepEqual([tr[1].name, tr[1].input, tr[1].cost, tr[1].profit, tr[1].roi], ['Upgrade to Rare', '1× Passive Refund', 2, 1, 50]);
+assert.deepEqual([tr[2].name, tr[2].icon, tr[2].input, tr[2].cost, tr[2].profit, tr[2].volume, tr[2].volIn], ['Item Inteiro', 'https://repoe-fork.github.io/art/whole.png', '5× Fragmento', 5, 4, 30, 40]);
 // the trend in words, shared by the calculators and the item page
 assert.equal(sinal({ trend: 2, n: 4, up: 4, down: 0 }), 'Sobe em todas (4 de 4)');
 assert.equal(sinal({ trend: 1, n: 4, up: 3, down: 1 }), 'Sobe em quase todas (3 de 4)');

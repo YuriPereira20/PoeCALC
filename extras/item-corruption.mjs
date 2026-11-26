@@ -2,6 +2,7 @@ import { trpc } from './_lib.mjs';
 
 export const title = 'Item Corruption';
 export const order = 40;
+export const group = 'Itens';
 
 export async function load(league) {
   const rows = [];

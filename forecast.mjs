@@ -103,7 +103,25 @@ export function backtest(items, anchor, horizon) {
       }
     }
   }
-  const median = (xs) => (xs.length ? quantile(xs.sort((a, b) => a - b), 0.5) : null);
   const sum = (g) => ({ model: median(g.model), naive: median(g.naive), n: g.model.length });
   return { ...sum(all), strong: { ...sum(strong), hit: strong.model.length ? hit / strong.model.length : null }, bins: bins.map((b) => ({ hit: b.n ? b.hit / b.n : null, n: b.n })) };
+}
+const median = (xs) => (xs.length ? quantile(xs.sort((a, b) => a - b), 0.5) : null);
+
+// The same check on the running league itself, which the backtest never saw: then/now = id -> price on day index
+// `anchor` and on `day`. Each item is predicted from its price then and compared with its price now.
+// Returns { model, naive, n } like backtest, and strong = { n, hit } for the forecasts where every past league agreed.
+export function liveCheck(items, then, now, anchor, day) {
+  const model = [], naive = [];
+  let strong = 0, hit = 0;
+  for (const [id, byLeague] of Object.entries(items)) {
+    const a = then[id], b = now[id];
+    if (!(a >= 1) || !(b > 0)) continue;
+    const f = forecast(Object.values(byLeague), day, anchor, a);
+    if (!f) continue;
+    model.push(Math.abs(f.mid / b - 1));
+    naive.push(Math.abs(a / b - 1));
+    if (Math.abs(f.trend) === 2) { strong++; if (Math.sign(Math.log(b / a)) === Math.sign(f.trend)) hit++; }
+  }
+  return { model: median(model), naive: median(naive), n: model.length, strong: { n: strong, hit: strong ? hit / strong : null } };
 }

@@ -2,6 +2,7 @@ import { trpc } from './_lib.mjs';
 
 export const title = 'Forbidden Jewels';
 export const order = 30;
+export const group = 'Itens';
 
 export async function load(league) {
   const { pairs } = await trpc('forbiddenJewels.list', { leagueId: league });

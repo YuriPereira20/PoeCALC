@@ -4,6 +4,7 @@ import { ninjaIcons } from './_lib.mjs';
 
 export const title = 'Gemas: Corromper (1x)';
 export const order = 82;
+export const group = 'Gemas';
 
 export async function load(league) {
   const { records, supplementaryPrices: sp } = await loadTab('level-corrupt');

@@ -3,10 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { calc, preFights, withPre } from './public/calc.js';
 import { summarize, CHAOS, DIVINE } from './extras/_exchange.mjs';
 import { belt, UNID, BELT_IDS } from './custom.mjs';
-import { at, smooth, exact, dayOf, forecast, backtest, sinal } from './forecast.mjs';
+import { at, smooth, exact, dayOf, forecast, backtest, sinal, confidence } from './forecast.mjs';
 import { slug, candidateIds } from './import-history.mjs';
 import { hourPrices } from './import-hours.mjs';
 import { move17 } from './extras/inicio-liga.mjs';
+import { rowsOf } from './extras/meta-builds.mjs';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -242,6 +243,18 @@ near(plain.lo, 2.75, 'lo sem ancora'); near(plain.mid, 3.5, 'mid sem ancora'); n
 // 3 usable leagues are needed: 2 are not enough, with or without anchor
 assert.equal(forecast([step(5, 2), step(5, 2), Array(12).fill(null)], DAY, TODAY, 10), null);
 assert.equal(forecast([[2, 2, 2, 2, 2], [3, 3, 3, 3, 3]], 2), null);
+// kind of forecast, bin 0-15 (binOf in forecast.mjs): agreement (3 = all, 2 = 80% or more, 1 = 60% or more) x median move
+// (3 = ln 1 or more, 2 = 0.4 to 1, 1 = 0.15 to 0.4, 0 = under 0.15), bin = 4 x agreement + move
+// 4 of 4 double: agreement 3, move ln 2 = 0.69 -> 4 x 3 + 2
+assert.equal(doubled.bin, 14);
+// 4 of 4 triple: move ln 3 = 1.10 -> 4 x 3 + 3
+assert.equal(forecast([step(5, 3), step(5, 3), step(5, 3), step(5, 3)], DAY, TODAY, 10).bin, 15);
+// 4 of 5 rise 30%, 1 falls 30%: agreement 0.8 -> 2, median move ln 1.3 = 0.26 -> 1: 4 x 2 + 1
+assert.equal(forecast([step(5, 1.3), step(5, 1.3), step(5, 1.3), step(5, 1.3), step(5, 0.7)], DAY, TODAY, 10).bin, 9);
+// 2 rise 20%, 2 fall 10%: median move (ln 1.2 + ln 0.9) / 2 = 0.04 is under 5%, so no direction
+assert.equal(forecast([step(5, 1.2), step(5, 1.2), step(5, 0.9), step(5, 0.9)], DAY, TODAY, 10).bin, null);
+// no anchor, so no direction and no bin
+assert.ok(forecast([step(5, 2), step(5, 2), step(5, 2)], DAY).bin == null);
 
 // backtest: 5 leagues, each doubling from day 3 to day 6; the held-out one is predicted from the other 4.
 // mid 10 x sqrt 2 against the actual 20: error 1 - sqrt(1/2) = 0.293; the naive price 10 against 20: error 0.5.
@@ -252,6 +265,17 @@ assert.equal(bt.n, 5);
 near(bt.model, 1 - Math.SQRT1_2, 'erro do modelo'); near(bt.naive, 0.5, 'erro do naive');
 assert.ok(bt.model < bt.naive);
 assert.equal(bt.strong.n, 5); assert.equal(bt.strong.hit, 1);
+// bins: all 5 forecasts are kind 14 (4 of 4 agree, move ln 2) and the price rose in all 5; the other kinds are empty
+assert.equal(bt.bins[14].n, bt.n); assert.equal(bt.bins[14].hit, 1);
+bt.bins.forEach((b, i) => { if (i !== 14) assert.deepEqual(b, { hit: null, n: 0 }); });
+// confidence: the kind's { hit, n } only with a direction and at least 30 tested cases
+const cb = Array.from({ length: 16 }, () => ({ hit: 0.9, n: 0 }));
+assert.equal(confidence(null, cb), null);
+assert.equal(confidence({ bin: null }, cb), null);
+cb[14] = { hit: 0.9, n: 29 };
+assert.equal(confidence({ bin: 14 }, cb), null);
+cb[14] = { hit: 0.9, n: 30 };
+assert.deepEqual(confidence({ bin: 14 }, cb), { hit: 0.9, n: 30 });
 
 // import-history.mjs: dump names to tracked ids
 assert.equal(slug("The Wolven King's Bite"), 'the-wolven-kings-bite');
@@ -269,6 +293,12 @@ const halved7 = Array.from({ length: 4 }, () => [999, 10, 10, 10, 10, 10, 5]);
 const mv = move17(halved7);
 near(mv.chg, -50, 'variação do dia 2 ao 7'); assert.equal(mv.sinal, 'Cai em todas (4 de 4)');
 assert.deepEqual(move17([]), { chg: null, sinal: 'Sem padrão' });
+// meta-builds: the change since the oldest snapshot day, in percentage points; null without an older day or outside its top 10
+const stats = [{ class: 'Witch', skill: 'Spark', percentage: 6, trend: 1 }, { class: 'Monk', skill: 'Tempest Flurry', percentage: 2, trend: -1 }];
+const snaps = { '2026-11-20': { total: 100, top: [{ class: 'Witch', skill: 'Spark', percentage: 4, trend: 1 }] }, '2026-11-25': { total: 120, top: [] } };
+assert.deepEqual(rowsOf(stats, snaps, '2026-11-25').map((r) => [r.name, r.tend, r.delta]), [['Witch · Spark', 'Subindo', 2], ['Monk · Tempest Flurry', 'Caindo', null]]); // 6 - 4
+assert.deepEqual(rowsOf(stats, { '2026-11-25': snaps['2026-11-25'] }, '2026-11-25').map((r) => r.delta), [null, null]); // only today
+assert.deepEqual(rowsOf(stats, {}, '2026-11-25').map((r) => r.delta), [null, null]); // no file yet
 // the trend in words, shared by the calculators and the item page
 assert.equal(sinal({ trend: 2, n: 4, up: 4, down: 0 }), 'Sobe em todas (4 de 4)');
 assert.equal(sinal({ trend: 1, n: 4, up: 3, down: 1 }), 'Sobe em quase todas (3 de 4)');

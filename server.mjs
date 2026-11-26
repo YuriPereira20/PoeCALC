@@ -5,7 +5,7 @@ import { dirname, extname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fetchLivePrices } from './prices.mjs';
 import { belt, UNID, BELT_IDS, BELT_ICON } from './custom.mjs';
-import { STARTS, dayOf, forecast } from './forecast.mjs';
+import { STARTS, backtest, confidence, dayOf, forecast } from './forecast.mjs';
 import { hashPassword, verifyPassword, sign, verify } from './auth.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -53,6 +53,22 @@ const refreshPrices = async (league) => {
   await writeFile(join(ROOT, 'data', `prices-${leagueFile(league)}.json`), JSON.stringify(cache));
   await recordDay(league, cache).catch((e) => console.error('histórico não gravado:', e.message));
   return cache;
+};
+
+// daily snapshot of the running league's top builds on poe.ninja, read by the meta-builds calculator: one entry per UTC day
+const recordBuilds = async () => {
+  const r = await fetch('https://poe.ninja/poe1/api/data/build-index-state', { headers: { 'user-agent': 'poe-profit-calculator/1.0' }, signal: AbortSignal.timeout(30000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const row = (await r.json()).leagueBuilds?.find((x) => x.leagueName === LEAGUES[0]);
+  if (!row) return;
+  const file = join(DATA_DIR, `meta-${leagueFile(LEAGUES[0])}.json`), day = new Date().toISOString().slice(0, 10);
+  let days = {};
+  try { days = JSON.parse(await readFile(file, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  if (days[day]) return;
+  days[day] = { total: row.total, top: row.statistics.map(({ class: c, skill, percentage, trend }) => ({ class: c, skill, percentage, trend })) };
+  // a temp file and a rename, like the history: a crash mid-write never leaves a broken file
+  await writeFile(`${file}.tmp`, JSON.stringify(days));
+  await rename(`${file}.tmp`, file);
 };
 
 const api = async (u, res) => {
@@ -153,6 +169,13 @@ const pastHistory = async () => (pastCache ??= JSON.parse(await readFile(join(RO
 let hoursCache = null;
 const hourHistory = async () => (hoursCache ??= await readFile(join(ROOT, 'data', 'hours.json'), 'utf8').then(JSON.parse, (e) => { if (e.code !== 'ENOENT') throw e; return { leagues: {}, items: {} }; }));
 
+// backtest bins per league day and horizon: the same for every item, so each one is computed once (about 0.1 s)
+const binsCache = new Map();
+const binsOf = (all, day, h) => {
+  if (!binsCache.has(`${day}|${h}`)) binsCache.set(`${day}|${h}`, backtest(all.items, day, h).bins);
+  return binsCache.get(`${day}|${h}`);
+};
+
 // one item: its past leagues, the running league, the forecast and the hours; the item page and the calculator read the same numbers
 const itemHistory = async (u, res) => {
   const league = u.searchParams.get('league') || 'Covens', id = u.searchParams.get('id') || '';
@@ -179,7 +202,9 @@ const itemHistory = async (u, res) => {
   const fc = (d) => (now && day >= 0 ? forecast(series, d, day, now) : forecast(series, d));
   const band = [];
   for (let d = Math.max(day + 1, 0); d < 120; d++) { const f = fc(d); if (f) band.push({ d, lo: f.lo, mid: f.mid, hi: f.hi }); }
-  json(res, 200, { id, name: line?.name ?? id, icon: base.icons?.[id] ?? (BELT_IDS.includes(id) ? BELT_ICON : null), league, day, now, past, cur, band, at: Object.fromEntries([7, 14, 30, 60].map((h) => [h, fc(day + h)])), hours });
+  // each forecast says how far to trust its direction: the hit rate of its kind in the past leagues
+  const at = Object.fromEntries([7, 14, 30, 60].map((h) => { const f = fc(day + h); return [h, f && { ...f, conf: confidence(f, binsOf(all, day, h)) }]; }));
+  json(res, 200, { id, name: line?.name ?? id, icon: base.icons?.[id] ?? (BELT_IDS.includes(id) ? BELT_ICON : null), league, day, now, past, cur, band, at, hours });
 };
 
 // shortcut: users in one JSON file, fine for dozens of logins; move to a database if it grows
@@ -321,8 +346,12 @@ const server = createServer(async (req, res) => {
   }
 });
 
-// the running league's history also grows when nobody opens the page: a refresh 10 s after boot, then every 6 hours
-const refreshTimer = () => refreshPrices(LEAGUES[0]).catch((e) => console.error('atualização automática falhou:', e.message));
+// the running league's history also grows when nobody opens the page: a refresh 10 s after boot, then every 6 hours,
+// and the build snapshot goes in the same round
+const refreshTimer = async () => {
+  await refreshPrices(LEAGUES[0]).catch((e) => console.error('atualização automática falhou:', e.message));
+  await recordBuilds().catch((e) => console.error('builds do poe.ninja não gravados:', e.message));
+};
 setTimeout(refreshTimer, 10_000).unref();
 setInterval(refreshTimer, 6 * HOUR).unref();
 

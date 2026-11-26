@@ -131,6 +131,7 @@
   .wi.wrap{flex-wrap:wrap;gap:2px 8px}
   /* some calculators have too many columns for a laptop screen: scroll sideways (their header stops being sticky) */
   #xtbl .card{overflow-x:auto}
+  #xtbl th.num{white-space:normal} /* a long numeric header wraps instead of widening the calculator table */
   .num small{white-space:normal}  .hd{display:flex;align-items:center;gap:14px;margin:0 0 14px}
   .hd h2{margin:0;min-width:0}
   .pod .ico{float:right;margin:0 0 6px 10px}
@@ -525,9 +526,10 @@ function renderExtraTable() {
   const shown = rows.slice(0, 500);
   $('#xcount').textContent = `Total: ${d.rows.length}` + (rows.length < d.rows.length ? ` · Com o filtro: ${rows.length}` : '') + (shown.length < rows.length ? ` · Mostrando ${shown.length} de ${rows.length}` : '');
   const head = d.columns.map((c) => `<th class="${c.type === 'text' ? '' : 'num'}${c.key === key ? ' sorted' : ''}" data-k="${esc(c.key)}">${esc(c.label)}${c.key === key ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}</th>`).join('');
-  const iconKey = d.columns.find((c) => c.type === 'text')?.key; // o ícone da linha vai antes da 1ª coluna de texto
+  const iconCol = d.columns.find((c) => c.type === 'text'), iconKey = iconCol?.key; // o ícone da linha vai antes da 1ª coluna de texto
   // Mercado/Wiki só quando essa coluna é nome de item ou gema (name, base); colour e effect (notável) não têm
-  const lkKey = ['name', 'base'].includes(iconKey) ? iconKey : null;
+  // links: false turns the Mercado/Wiki links off for a name that is not an item (poe.ninja builds)
+  const lkKey = ['name', 'base'].includes(iconKey) && iconCol.links !== false ? iconKey : null;
   const body = shown.map((r) => `<tr>${d.columns.map((c) => {
     const lk = c.key === lkKey ? links(r[c.key], xv.league) : '';
     // a row with href (previsao: its item page) links the name to it
@@ -578,7 +580,13 @@ async function itemView(id) {
 function itemHtml() {
   const h = hist, past = Object.entries(h.past), f30 = h.at[30], cols = [1, 2, 3, 4, 5, 6, 7, 10, 14, 21, 30, 45, 60, 90], hcols = [1, 2, 3, 4, 6, 8, 12, 18, 24, 36, 48, 72];
   const sg = (x) => `${x > 0 ? '+' : ''}${pct(x)}`;
-  const card = (lbl, f) => `<div class="stat"><span class="lbl">${lbl}</span><b>${esc(f ? money(f.mid) : '-')}</b><small>${esc(f ? [h.now > 0 ? sg(100 * (f.mid / h.now - 1)) : '', `${money(f.lo)} a ${money(f.hi)}`].filter(Boolean).join(' · ') : '-')}</small></div>`;
+  // how far to trust the direction: the hit rate of the forecast's kind in the past leagues (confidence() in forecast.mjs)
+  const confHtml = (f) => {
+    if (!f?.conf) return '<small>sem direção clara</small>';
+    const { hit, n } = f.conf, [cls, txt] = hit >= 0.75 ? ['pos', 'Confiança alta'] : hit >= 0.6 ? ['warn', 'Confiança média'] : ['neg', 'Confiança baixa'];
+    return `<small><span class="chip ${cls}">${esc(txt)}</span> ${esc(`acertou a direção em ${Math.round(100 * hit)}% de ${n.toLocaleString('pt-BR')} casos parecidos`)}</small>`;
+  };
+  const card = (lbl, f) => `<div class="stat"><span class="lbl">${lbl}</span><b>${esc(f ? money(f.mid) : '-')}</b><small>${esc(f ? [h.now > 0 ? sg(100 * (f.mid / h.now - 1)) : '', `${money(f.lo)} a ${money(f.hi)}`].filter(Boolean).join(' · ') : '-')}</small>${confHtml(f)}</div>`;
   // prices by day index (chaos) for the table
   const curAt = [], fcMid = [];
   for (const [d, p] of h.cur) curAt[d] = p;
